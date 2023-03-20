@@ -1,0 +1,4 @@
+temporalGrpcAddress: {{ TEMPORAL_ADDRESS | default("temporal-k8s:7233") }}
+port: {{ TEMPORAL_UI_PORT | default("8080") }}
+enableUi: {{ TEMPORAL_UI_ENABLED | default("true") }}
+defaultNamespace: {{ TEMPORAL_DEFAULT_NAMESPACE | default("default") }}
