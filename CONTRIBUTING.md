@@ -22,5 +22,5 @@ tox                  # runs 'lint' and 'unit' environments
 ### Deploy
 
 Please refer to the
-[Temporal server documentation](https://github.com/canonical/temporal-k8s-operator/blob/main/CONTRIBUTING.md)
+[Temporal server charm documentation](https://github.com/canonical/temporal-k8s-operator/blob/main/CONTRIBUTING.md)
 for instructions about how to deploy the web UI and relate it to the server.
