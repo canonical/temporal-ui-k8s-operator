@@ -33,7 +33,7 @@ def render(template_name, context):
     """
     charm_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     loader = FileSystemLoader(os.path.join(charm_dir, "templates"))
-    return Environment(loader=loader).get_template(template_name).render(**context)
+    return Environment(loader=loader, autoescape=True).get_template(template_name).render(**context)
 
 
 class TemporalUiK8SOperatorCharm(CharmBase):
