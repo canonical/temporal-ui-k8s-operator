@@ -33,7 +33,7 @@ async def deploy(ops_test: OpsTest):
     await ops_test.model.deploy(charm, resources=resources, application_name=APP_NAME)
     await ops_test.model.deploy(APP_NAME_SERVER, channel="edge")
     await ops_test.model.deploy(APP_NAME_ADMIN, channel="edge")
-    await ops_test.model.deploy("postgresql-k8s", channel="edge")
+    await ops_test.model.deploy("postgresql-k8s", channel="edge", trust=True)
 
     async with ops_test.fast_forward():
         await ops_test.model.wait_for_idle(
