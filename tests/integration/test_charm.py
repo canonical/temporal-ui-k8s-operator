@@ -53,13 +53,22 @@ async def deploy(ops_test: OpsTest):
         await ops_test.model.integrate(f"{APP_NAME_SERVER}:db", "postgresql-k8s:db")
         await ops_test.model.integrate(f"{APP_NAME_SERVER}:visibility", "postgresql-k8s:db")
         await ops_test.model.integrate(f"{APP_NAME_SERVER}:admin", f"{APP_NAME_ADMIN}:admin")
-        await ops_test.model.integrate(f"{APP_NAME}:ui", f"{APP_NAME_SERVER}:ui")
         await ops_test.model.wait_for_idle(
-            apps=[APP_NAME, APP_NAME_SERVER, APP_NAME_ADMIN],
+            apps=[APP_NAME_SERVER, APP_NAME_ADMIN],
             status="active",
             raise_on_blocked=False,
-            timeout=1200,
+            timeout=300,
         )
+
+        await ops_test.model.integrate(f"{APP_NAME}:ui", f"{APP_NAME_SERVER}:ui")
+
+        await ops_test.model.wait_for_idle(
+            apps=[APP_NAME],
+            status="active",
+            raise_on_blocked=False,
+            timeout=300,
+        )
+
         assert ops_test.model.applications[APP_NAME].units[0].workload_status == "active"
 
 
