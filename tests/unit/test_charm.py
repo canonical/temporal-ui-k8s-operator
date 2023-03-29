@@ -17,6 +17,7 @@ from charm import TemporalUiK8SOperatorCharm
 
 APP_NAME = "temporal-ui"
 
+
 class TestCharm(TestCase):
     """Unit tests.
 
