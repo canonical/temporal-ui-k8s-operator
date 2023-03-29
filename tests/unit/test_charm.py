@@ -15,6 +15,7 @@ from ops.testing import Harness
 
 from charm import TemporalUiK8SOperatorCharm
 
+APP_NAME = "temporal-ui"
 
 class TestCharm(TestCase):
     """Unit tests.
@@ -26,17 +27,16 @@ class TestCharm(TestCase):
     maxDiff = None
 
     def setUp(self):
-        """Set up for the unit tests."""
+        """Setup for the unit tests."""
         self.harness = Harness(TemporalUiK8SOperatorCharm)
         self.addCleanup(self.harness.cleanup)
-        self.harness.set_can_connect("temporal-ui", True)
+        self.harness.set_can_connect(APP_NAME, True)
         self.harness.set_leader(True)
         self.harness.begin()
 
     def test_initial_plan(self):
         """The initial pebble plan is empty."""
-        harness = self.harness
-        initial_plan = harness.get_container_pebble_plan("temporal-ui").to_dict()
+        initial_plan = self.harness.get_container_pebble_plan(APP_NAME).to_dict()
         self.assertEqual(initial_plan, {})
 
     def test_blocked_by_temporal_server(self):
@@ -44,13 +44,12 @@ class TestCharm(TestCase):
         harness = self.harness
 
         # Simulate pebble readiness.
-        container = harness.model.unit.get_container("temporal-ui")
+        container = harness.model.unit.get_container(APP_NAME)
         harness.charm.on.temporal_ui_pebble_ready.emit(container)
 
         # The BlockStatus is set with a message.
         self.assertEqual(
             harness.model.unit.status,
-            # BlockedStatus("ui:temporal relation: server is not ready"),
             BlockedStatus("ui:temporal relation: not available"),
         )
 
@@ -78,11 +77,11 @@ class TestCharm(TestCase):
             },
         }
 
-        got_plan = harness.get_container_pebble_plan("temporal-ui").to_dict()
+        got_plan = harness.get_container_pebble_plan(APP_NAME).to_dict()
         self.assertEqual(got_plan, want_plan)
 
         # The service was started.
-        service = harness.model.unit.get_container("temporal-ui").get_service("temporal-ui")
+        service = harness.model.unit.get_container(APP_NAME).get_service(APP_NAME)
         self.assertTrue(service.is_running())
 
 
@@ -93,7 +92,7 @@ def simulate_lifecycle(harness):
         harness: ops.testing.Harness object used to simulate charm lifecycle.
     """
     # Simulate pebble readiness.
-    container = harness.model.unit.get_container("temporal-ui")
+    container = harness.model.unit.get_container(APP_NAME)
     harness.charm.on.temporal_ui_pebble_ready.emit(container)
 
     # Simulate server readiness.
