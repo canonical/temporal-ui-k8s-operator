@@ -13,7 +13,9 @@ description: |
   
   This charm provides the web UI which can be related to the Temporal server 
   charm to view workflow runs.
-maintainer: Commercial Systems <jaas-crew@lists.canonical.com>
+maintainers: 
+  - Commercial Systems <jaas-crew@lists.canonical.com>
+docs: https://discourse.charmhub.io/t/temporal-ui-documentation-overview/9232
 tags:
   - temporal
   - workflow
