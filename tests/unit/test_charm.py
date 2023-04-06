@@ -199,7 +199,7 @@ class TestState(TestCase):
 
 
 def make_state(data):
-    """Create dummy state.
+    """Create state object.
 
     Args:
         data: Data to be included in state.
