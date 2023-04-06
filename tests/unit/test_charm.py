@@ -44,6 +44,9 @@ class TestCharm(TestCase):
         """The charm is blocked without a temporal:ui relation."""
         harness = self.harness
 
+        # Simulate peer relation readiness.
+        harness.add_relation("peer", "temporal")
+
         # Simulate pebble readiness.
         container = harness.model.unit.get_container(APP_NAME)
         harness.charm.on.temporal_ui_pebble_ready.emit(container)
@@ -54,9 +57,27 @@ class TestCharm(TestCase):
             BlockedStatus("ui:temporal relation: not available"),
         )
 
+    def test_blocked_by_peer_relation_not_ready(self):
+        """The charm is blocked without a peer relation."""
+        harness = self.harness
+
+        # Simulate pebble readiness.
+        container = harness.model.unit.get_container(APP_NAME)
+        harness.charm.on.temporal_ui_pebble_ready.emit(container)
+
+        # No plans are set yet.
+        got_plan = harness.get_container_pebble_plan(APP_NAME).to_dict()
+        self.assertEqual(got_plan, {})
+
+        # The BlockStatus is set with a message.
+        self.assertEqual(harness.model.unit.status, BlockedStatus("peer relation not ready"))
+
     def test_ready(self):
         """The pebble plan is correctly generated when the charm is ready."""
         harness = self.harness
+
+        # Simulate peer relation readiness.
+        harness.add_relation("peer", "temporal")
 
         # Add the temporal relation.
         harness.add_relation("ui", "temporal")

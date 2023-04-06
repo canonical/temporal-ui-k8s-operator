@@ -28,6 +28,10 @@ assumes:
   - juju >= 3.1
   - k8s-api
 
+peers:
+  peer:
+    interface: temporal
+
 provides:
   ui:
     interface: temporal
