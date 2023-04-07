@@ -63,6 +63,7 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         # Handle basic charm lifecycle.
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.temporal_ui_pebble_ready, self._on_temporal_ui_pebble_ready)
+        self.framework.observe(self.on.config_changed, self._on_config_changed)
 
         # Handle ui:temporal relation.
         self.framework.observe(self.on.ui_relation_joined, self._on_ui_relation_joined)
