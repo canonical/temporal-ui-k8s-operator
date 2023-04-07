@@ -11,11 +11,12 @@ import os
 
 from charms.nginx_ingress_integrator.v0.ingress import IngressRequires
 from jinja2 import Environment, FileSystemLoader
-from ops import framework, main
+from ops import main
 from ops.charm import CharmBase
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 
 from log import log_event_handler
+from state import State
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
@@ -44,8 +45,6 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         external_hostname: DNS listing used for external connections.
     """
 
-    _state = framework.StoredState()
-
     @property
     def external_hostname(self):
         """Return the DNS listing used for external connections."""
@@ -59,13 +58,14 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         """
         super().__init__(*args)
         self.name = "temporal-ui"
+        self._state = State(self.app, lambda: self.model.get_relation("peer"))
 
         # Handle basic charm lifecycle.
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.temporal_ui_pebble_ready, self._on_temporal_ui_pebble_ready)
+        self.framework.observe(self.on.config_changed, self._on_config_changed)
 
         # Handle ui:temporal relation.
-        self._state.set_default(server_status="blocked")
         self.framework.observe(self.on.ui_relation_joined, self._on_ui_relation_joined)
         self.framework.observe(self.on.ui_relation_changed, self._on_ui_relation_changed)
         self.framework.observe(self.on.ui_relation_broken, self._on_ui_relation_broken)
@@ -77,6 +77,7 @@ class TemporalUiK8SOperatorCharm(CharmBase):
                 "service-hostname": self.external_hostname,
                 "service-name": self.app.name,
                 "service-port": 8080,
+                "tls-secret-name": self.config["tls-secret-name"],
             },
         )
 
@@ -106,7 +107,9 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             event: The event triggered when the relation changed.
         """
         self.unit.status = WaitingStatus("configuring temporal")
-        self.ingress.update_config({"service-hostname": self.external_hostname})
+        self.ingress.update_config(
+            {"service-hostname": self.external_hostname, "tls-secret-name": self.config["tls-secret-name"]}
+        )
         self._update(event)
 
     @log_event_handler(logger)
@@ -148,10 +151,12 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         Raises:
             ValueError: in case of invalid configuration.
         """
+        if not self._state.is_ready():
+            raise ValueError("peer relation not ready")
+
         ui_relations = self.model.relations["ui"]
         if not ui_relations:
             raise ValueError("ui:temporal relation: not available")
-
         if not self._state.server_status == "ready":
             raise ValueError("ui:temporal relation: server is not ready")
 
