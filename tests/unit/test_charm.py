@@ -20,6 +20,7 @@ from state import State
 APP_NAME = "temporal-ui"
 UI_PORT = "8080"
 
+
 class TestCharm(TestCase):
     """Unit tests for charm.
 
