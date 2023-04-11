@@ -18,7 +18,7 @@ from charm import TemporalUiK8SOperatorCharm
 from state import State
 
 APP_NAME = "temporal-ui"
-
+UI_PORT = "8080"
 
 class TestCharm(TestCase):
     """Unit tests for charm.
@@ -91,10 +91,10 @@ class TestCharm(TestCase):
         harness.charm._require_nginx_route()
 
         assert harness.get_relation_data(nginx_route_relation_id, harness.charm.app) == {
-            "service-namespace": "temporal-model",
+            "service-namespace": harness.charm.model.name,
             "service-hostname": harness.charm.app.name,
             "service-name": harness.charm.app.name,
-            "service-port": "8080",
+            "service-port": UI_PORT,
             "tls-secret-name": "temporal-tls",
         }
 
@@ -103,10 +103,10 @@ class TestCharm(TestCase):
         harness.charm._require_nginx_route()
 
         assert harness.get_relation_data(nginx_route_relation_id, harness.charm.app) == {
-            "service-namespace": "temporal-model",
+            "service-namespace": harness.charm.model.name,
             "service-hostname": new_hostname,
             "service-name": harness.charm.app.name,
-            "service-port": "8080",
+            "service-port": UI_PORT,
             "tls-secret-name": "temporal-tls",
         }
 
@@ -115,10 +115,10 @@ class TestCharm(TestCase):
         harness.charm._require_nginx_route()
 
         assert harness.get_relation_data(nginx_route_relation_id, harness.charm.app) == {
-            "service-namespace": "temporal-model",
+            "service-namespace": harness.charm.model.name,
             "service-hostname": new_hostname,
             "service-name": harness.charm.app.name,
-            "service-port": "8080",
+            "service-port": UI_PORT,
             "tls-secret-name": new_tls,
         }
 
