@@ -58,8 +58,6 @@ async def deploy(ops_test: OpsTest):
         await ops_test.model.integrate(f"{APP_NAME_SERVER}:visibility", "postgresql-k8s:db")
         await ops_test.model.integrate(f"{APP_NAME_SERVER}:admin", f"{APP_NAME_ADMIN}:admin")
 
-        await ops_test.model.integrate(APP_NAME, "nginx-ingress-integrator")
-
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME_SERVER, APP_NAME_ADMIN],
             status="active",
@@ -75,6 +73,16 @@ async def deploy(ops_test: OpsTest):
             raise_on_blocked=False,
             timeout=300,
         )
+
+        await ops_test.model.integrate(APP_NAME, "nginx-ingress-integrator")
+
+        await ops_test.model.wait_for_idle(
+            apps=[APP_NAME, "nginx-ingress-integrator"],
+            status="active",
+            raise_on_blocked=False,
+            timeout=300,
+        )
+
 
         assert ops_test.model.applications[APP_NAME].units[0].workload_status == "active"
 
@@ -99,7 +107,7 @@ class TestDeployment:
         new_hostname = "temporal-web"
         application = ops_test.model.applications[APP_NAME]
         await application.set_config({"external-hostname": new_hostname})
-        await ops_test.model.wait_for_idle(apps=[APP_NAME], status="active", raise_on_blocked=False, timeout=60)
+        await ops_test.model.wait_for_idle(apps=[APP_NAME, "nginx-ingress-integrator"], status="active", raise_on_blocked=False, timeout=600)
         with unittest.mock.patch.multiple(socket, getaddrinfo=gen_patch_getaddrinfo(new_hostname, "127.0.0.1")):
             response = requests.get(f"https://{new_hostname}", timeout=5, verify=False)  # nosec
             assert response.status_code == 200 and 'id="svelte"' in response.text.lower()
