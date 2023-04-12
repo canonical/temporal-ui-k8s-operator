@@ -18,6 +18,7 @@ from charm import TemporalUiK8SOperatorCharm
 from state import State
 
 APP_NAME = "temporal-ui"
+UI_PORT = "8080"
 
 
 class TestCharm(TestCase):
@@ -35,6 +36,7 @@ class TestCharm(TestCase):
         self.addCleanup(self.harness.cleanup)
         self.harness.set_can_connect(APP_NAME, True)
         self.harness.set_leader(True)
+        self.harness.set_model_name("temporal-model")
         self.harness.begin()
 
     def test_initial_plan(self):
@@ -73,6 +75,53 @@ class TestCharm(TestCase):
 
         # The BlockStatus is set with a message.
         self.assertEqual(harness.model.unit.status, BlockedStatus("peer relation not ready"))
+
+    def test_ingress(self):
+        """The charm relates correctly to the nginx ingress charm and can be configured."""
+        harness = self.harness
+
+        # Simulate peer relation readiness.
+        harness.add_relation("peer", "temporal")
+
+        # Add the temporal relation.
+        harness.add_relation("ui", "temporal")
+
+        simulate_lifecycle(harness)
+
+        nginx_route_relation_id = harness.add_relation("nginx-route", "ingress")
+        harness.charm._require_nginx_route()
+
+        assert harness.get_relation_data(nginx_route_relation_id, harness.charm.app) == {
+            "service-namespace": harness.charm.model.name,
+            "service-hostname": harness.charm.app.name,
+            "service-name": harness.charm.app.name,
+            "service-port": UI_PORT,
+            "tls-secret-name": "temporal-tls",
+        }
+
+        new_hostname = "new-temporal-ui-k8s"
+        harness.update_config({"external-hostname": new_hostname})
+        harness.charm._require_nginx_route()
+
+        assert harness.get_relation_data(nginx_route_relation_id, harness.charm.app) == {
+            "service-namespace": harness.charm.model.name,
+            "service-hostname": new_hostname,
+            "service-name": harness.charm.app.name,
+            "service-port": UI_PORT,
+            "tls-secret-name": "temporal-tls",
+        }
+
+        new_tls = "new-tls"
+        harness.update_config({"tls-secret-name": new_tls})
+        harness.charm._require_nginx_route()
+
+        assert harness.get_relation_data(nginx_route_relation_id, harness.charm.app) == {
+            "service-namespace": harness.charm.model.name,
+            "service-hostname": new_hostname,
+            "service-name": harness.charm.app.name,
+            "service-port": UI_PORT,
+            "tls-secret-name": new_tls,
+        }
 
     def test_ready(self):
         """The pebble plan is correctly generated when the charm is ready."""

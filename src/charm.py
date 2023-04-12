@@ -9,7 +9,7 @@
 import logging
 import os
 
-from charms.nginx_ingress_integrator.v0.ingress import IngressRequires
+from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
 from jinja2 import Environment, FileSystemLoader
 from ops import main
 from ops.charm import CharmBase
@@ -71,14 +71,16 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         self.framework.observe(self.on.ui_relation_broken, self._on_ui_relation_broken)
 
         # Handle Ingress.
-        self.ingress = IngressRequires(
-            self,
-            {
-                "service-hostname": self.external_hostname,
-                "service-name": self.app.name,
-                "service-port": 8080,
-                "tls-secret-name": self.config["tls-secret-name"],
-            },
+        self._require_nginx_route()
+
+    def _require_nginx_route(self):
+        """Require nginx-route relation based on current configuration."""
+        require_nginx_route(
+            charm=self,
+            service_hostname=self.external_hostname,
+            service_name=self.app.name,
+            service_port=8080,
+            tls_secret_name=self.config["tls-secret-name"],
         )
 
     @log_event_handler(logger)
@@ -107,9 +109,6 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             event: The event triggered when the relation changed.
         """
         self.unit.status = WaitingStatus("configuring temporal")
-        self.ingress.update_config(
-            {"service-hostname": self.external_hostname, "tls-secret-name": self.config["tls-secret-name"]}
-        )
         self._update(event)
 
     @log_event_handler(logger)

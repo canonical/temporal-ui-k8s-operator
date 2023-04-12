@@ -19,5 +19,6 @@ jobs:
     secrets: inherit
     with:
       integration-test-provider: microk8s
+      integration-test-microk8s-addons: "ingress storage dns rbac registry"
       integration-test-provider-channel: 1.25-strict/stable
       integration-test-juju-channel: 3.1/stable
