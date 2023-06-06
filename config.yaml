@@ -23,3 +23,38 @@ options:
         Name of the k8s secret which contains the TLS certificate to be used by ingress.
     default: "temporal-tls"
     type: string
+  port:
+    description: |
+        The port used by the Temporal Web UI Server and the HTTP API.
+    default: 8080
+    type: int
+  default-namespace:
+    description: |
+        The default Temporal namespace that the Web UI opens first.
+    default: "default"
+    type: string
+  auth-enabled:
+    description: |
+        Whether or not OIDC authentication is enabled.
+    default: False
+    type: boolean
+  auth-provider-url:
+    description: |
+        The .well-known IDP discovery URL for authentication and authorization.
+    default: ""
+    type: string
+  auth-client-id:
+    description: |
+        The client ID used for authentication or authorization.
+    default: ""
+    type: string
+  auth-client-secret:
+    description: |
+        The client secret used for authentication and authorization.
+    default: ""
+    type: string
+  auth-scopes:
+    description: |
+        The comma-separated array of resources required to be accessed from the access token.
+    default: "[openid,profile,email]"
+    type: string
