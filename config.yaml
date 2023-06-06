@@ -19,7 +19,7 @@ options:
     description: |
         The DNS listing used for external connections. Will default to the name of the deployed
         application.
-    default: ""
+    default: "temporal-ui-k8s"
     type: string
   tls-secret-name:
     description: |
