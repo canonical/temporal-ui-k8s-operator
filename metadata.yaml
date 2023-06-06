@@ -15,6 +15,7 @@ description: |
   charm to view workflow runs.
 maintainers: 
   - Commercial Systems <jaas-crew@lists.canonical.com>
+source: https://github.com/canonical/temporal-ui-k8s-operator
 docs: https://discourse.charmhub.io/t/temporal-ui-documentation-overview/9232
 tags:
   - temporal
