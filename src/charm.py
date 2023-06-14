@@ -162,9 +162,6 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         if not self._state.server_status == "ready":
             raise ValueError("ui:temporal relation: server is not ready")
 
-        if not int(self.config["port"]):
-            raise ValueError("Invalid config: port number missing")
-
         if self.config["auth-enabled"]:
             for param in REQUIRED_AUTH_PARAMETERS:
                 if self.config[param].strip() == "":
