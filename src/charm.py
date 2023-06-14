@@ -18,6 +18,8 @@ from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingSta
 from log import log_event_handler
 from state import State
 
+REQUIRED_AUTH_PARAMETERS = ["auth-provider-url", "auth-client-id", "auth-client-secret", "auth-scopes"]
+
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
 
@@ -79,8 +81,9 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             charm=self,
             service_hostname=self.external_hostname,
             service_name=self.app.name,
-            service_port=8080,
+            service_port=self.config["port"],
             tls_secret_name=self.config["tls-secret-name"],
+            backend_protocol="HTTPS",
         )
 
     @log_event_handler(logger)
@@ -159,6 +162,14 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         if not self._state.server_status == "ready":
             raise ValueError("ui:temporal relation: server is not ready")
 
+        if self.config["auth-enabled"]:
+            for param in REQUIRED_AUTH_PARAMETERS:
+                if self.config[param].strip() == "":
+                    raise ValueError(f"Invalid config: {param} value missing")
+
+            if not self.model.relations.get("nginx-route"):
+                raise ValueError("Invalid config: auth cannot work without ingress relation")
+
     @log_event_handler(logger)
     def _update(self, event):
         """Update the Temporal UI configuration and replan its execution.
@@ -180,8 +191,23 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         logger.info("configuring temporal ui")
         options = {
             "log-level": "LOG_LEVEL",
+            "port": "TEMPORAL_UI_PORT",
+            "default-namespace": "TEMPORAL_DEFAULT_NAMESPACE",
+            "auth-enabled": "TEMPORAL_AUTH_ENABLED",
         }
+
         context = {config_key: self.config[key] for key, config_key in options.items()}
+        if self.config["auth-enabled"]:
+            auth_options = {
+                "auth-provider-url": "TEMPORAL_AUTH_PROVIDER_URL",
+                "auth-client-id": "TEMPORAL_AUTH_CLIENT_ID",
+                "auth-client-secret": "TEMPORAL_AUTH_CLIENT_SECRET",
+                "auth-scopes": "TEMPORAL_AUTH_SCOPES",
+            }
+            context.update({config_key: self.config[key] for key, config_key in auth_options.items()})
+            context.update(
+                {"TEMPORAL_AUTH_CALLBACK_URL": f"https://{self.config['external-hostname']}/auth/sso/callback"}
+            )
 
         config = render("config.jinja", context)
         container.push("/home/ui-server/config/charm.yaml", config, make_dirs=True)

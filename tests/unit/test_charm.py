@@ -97,6 +97,7 @@ class TestCharm(TestCase):
             "service-name": harness.charm.app.name,
             "service-port": UI_PORT,
             "tls-secret-name": "temporal-tls",
+            "backend-protocol": "HTTPS",
         }
 
         new_hostname = "new-temporal-ui-k8s"
@@ -109,6 +110,7 @@ class TestCharm(TestCase):
             "service-name": harness.charm.app.name,
             "service-port": UI_PORT,
             "tls-secret-name": "temporal-tls",
+            "backend-protocol": "HTTPS",
         }
 
         new_tls = "new-tls"
@@ -121,6 +123,7 @@ class TestCharm(TestCase):
             "service-name": harness.charm.app.name,
             "service-port": UI_PORT,
             "tls-secret-name": new_tls,
+            "backend-protocol": "HTTPS",
         }
 
     def test_ready(self):
@@ -145,6 +148,61 @@ class TestCharm(TestCase):
                     "override": "replace",
                     "environment": {
                         "LOG_LEVEL": "info",
+                        "TEMPORAL_UI_PORT": 8080,
+                        "TEMPORAL_DEFAULT_NAMESPACE": "default",
+                        "TEMPORAL_AUTH_ENABLED": False,
+                    },
+                }
+            },
+        }
+
+        got_plan = harness.get_container_pebble_plan(APP_NAME).to_dict()
+        self.assertEqual(got_plan, want_plan)
+
+        # The service was started.
+        service = harness.model.unit.get_container(APP_NAME).get_service(APP_NAME)
+        self.assertTrue(service.is_running())
+
+    def test_auth(self):
+        """The pebble plan is correctly generated when the charm is ready."""
+        harness = self.harness
+
+        # Simulate peer relation readiness.
+        harness.add_relation("peer", "temporal")
+
+        # Add the temporal relation.
+        harness.add_relation("ui", "temporal")
+
+        simulate_lifecycle(harness)
+        harness.add_relation("nginx-route", "ingress")
+
+        harness.update_config(
+            {
+                "auth-enabled": True,
+                "auth-provider-url": "some-provider-url",
+                "auth-client-id": "some-client-id",
+                "auth-client-secret": "some-client-secret",
+            }
+        )
+
+        # The plan is generated after pebble is ready.
+        want_plan = {
+            "services": {
+                "temporal-ui": {
+                    "summary": "temporal ui",
+                    "command": "./ui-server --env charm start",
+                    "startup": "enabled",
+                    "override": "replace",
+                    "environment": {
+                        "LOG_LEVEL": "info",
+                        "TEMPORAL_UI_PORT": 8080,
+                        "TEMPORAL_DEFAULT_NAMESPACE": "default",
+                        "TEMPORAL_AUTH_ENABLED": True,
+                        "TEMPORAL_AUTH_PROVIDER_URL": "some-provider-url",
+                        "TEMPORAL_AUTH_CLIENT_ID": "some-client-id",
+                        "TEMPORAL_AUTH_CLIENT_SECRET": "some-client-secret",
+                        "TEMPORAL_AUTH_SCOPES": "[openid,profile,email]",
+                        "TEMPORAL_AUTH_CALLBACK_URL": f"https://{harness.model.config['external-hostname']}/auth/sso/callback",
                     },
                 }
             },

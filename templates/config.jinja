@@ -2,3 +2,13 @@ temporalGrpcAddress: {{ TEMPORAL_ADDRESS | default("temporal-k8s:7233") }}
 port: {{ TEMPORAL_UI_PORT | default("8080") }}
 enableUi: {{ TEMPORAL_UI_ENABLED | default("true") }}
 defaultNamespace: {{ TEMPORAL_DEFAULT_NAMESPACE | default("default") }}
+auth:
+  enabled: {{ TEMPORAL_AUTH_ENABLED | default("false")}}
+  providers:
+    - label: Auth0 oidc # for internal use; in future may expose as button text
+      type: oidc # for futureproofing; only oidc is supported today
+      providerUrl: {{ TEMPORAL_AUTH_PROVIDER_URL | default("") }}
+      clientId: {{ TEMPORAL_AUTH_CLIENT_ID | default("") }}
+      clientSecret: {{ TEMPORAL_AUTH_CLIENT_SECRET | default("") }}
+      scopes: {{ TEMPORAL_AUTH_SCOPES | default("") }}
+      callbackUrl: {{ TEMPORAL_AUTH_CALLBACK_URL | default("") }}
