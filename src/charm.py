@@ -170,7 +170,7 @@ class TemporalUiK8SOperatorCharm(CharmBase):
                 if self.config[param].strip() == "":
                     raise ValueError(f"Invalid config: {param} value missing")
 
-            ingress_relation = self.model.relations["nginx-route"]
+            ingress_relation = self.model.relations.get("nginx-route")
             if not ingress_relation:
                 raise ValueError("Invalid config: auth cannot work without ingress relation")
 
