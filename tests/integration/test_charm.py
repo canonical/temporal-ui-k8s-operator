@@ -13,7 +13,7 @@ import pytest
 import pytest_asyncio
 import requests
 import yaml
-from helpers import gen_patch_getaddrinfo
+from helpers import gen_patch_getaddrinfo, scale
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
@@ -28,15 +28,16 @@ APP_NAME_ADMIN = "temporal-admin-k8s"
 @pytest_asyncio.fixture(name="deploy", scope="module")
 async def deploy(ops_test: OpsTest):
     """The app is up and running."""
-    charm = await ops_test.build_charm(".")
-    resources = {"temporal-ui-image": METADATA["containers"]["temporal-ui"]["upstream-source"]}
-
     # Deploy temporal server, temporal admin and postgresql charms.
-    await ops_test.model.deploy(charm, resources=resources, application_name=APP_NAME)
     await ops_test.model.deploy(APP_NAME_SERVER, channel="stable")
     await ops_test.model.deploy(APP_NAME_ADMIN, channel="stable")
     await ops_test.model.deploy("postgresql-k8s", channel="edge", trust=True)
     await ops_test.model.deploy("nginx-ingress-integrator", trust=True)
+
+    charm = await ops_test.build_charm(".")
+    resources = {"temporal-ui-image": METADATA["containers"]["temporal-ui"]["upstream-source"]}
+
+    await ops_test.model.deploy(charm, resources=resources, application_name=APP_NAME)
 
     async with ops_test.fast_forward():
         await ops_test.model.wait_for_idle(
@@ -53,8 +54,8 @@ async def deploy(ops_test: OpsTest):
         )
 
         assert ops_test.model.applications[APP_NAME].units[0].workload_status == "blocked"
-        await ops_test.model.integrate(f"{APP_NAME_SERVER}:db", "postgresql-k8s:db")
-        await ops_test.model.integrate(f"{APP_NAME_SERVER}:visibility", "postgresql-k8s:db")
+        await ops_test.model.integrate(f"{APP_NAME_SERVER}:db", "postgresql-k8s:database")
+        await ops_test.model.integrate(f"{APP_NAME_SERVER}:visibility", "postgresql-k8s:database")
         await ops_test.model.integrate(f"{APP_NAME_SERVER}:admin", f"{APP_NAME_ADMIN}:admin")
 
         await ops_test.model.wait_for_idle(
@@ -110,4 +111,23 @@ class TestDeployment:
         )
         with unittest.mock.patch.multiple(socket, getaddrinfo=gen_patch_getaddrinfo(new_hostname, "127.0.0.1")):
             response = requests.get(f"https://{new_hostname}", timeout=5, verify=False)  # nosec
+            assert response.status_code == 200 and 'id="svelte"' in response.text.lower()
+
+    async def test_scaling_up(self, ops_test: OpsTest):
+        """Scale Temporal worker charm up to 2 units."""
+        await scale(ops_test, app=APP_NAME, units=2)
+
+        status = await ops_test.model.get_status()  # noqa: F821
+
+        for i in range(2):
+            address = status["applications"][APP_NAME]["units"][f"{APP_NAME}/{i}"]["address"]
+            url = f"http://{address}:8080"
+            logger.info("curling app address: %s", url)
+
+            response = requests.get(url, timeout=300)
+            assert response.status_code == 200
+
+        hostname = "temporal-web"
+        with unittest.mock.patch.multiple(socket, getaddrinfo=gen_patch_getaddrinfo(hostname, "127.0.0.1")):
+            response = requests.get(f"https://{hostname}", timeout=5, verify=False)  # nosec
             assert response.status_code == 200 and 'id="svelte"' in response.text.lower()

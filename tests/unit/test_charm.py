@@ -97,7 +97,7 @@ class TestCharm(TestCase):
             "service-name": harness.charm.app.name,
             "service-port": UI_PORT,
             "tls-secret-name": "temporal-tls",
-            "backend-protocol": "HTTPS",
+            "backend-protocol": "HTTP",
         }
 
         new_hostname = "new-temporal-ui-k8s"
@@ -110,7 +110,7 @@ class TestCharm(TestCase):
             "service-name": harness.charm.app.name,
             "service-port": UI_PORT,
             "tls-secret-name": "temporal-tls",
-            "backend-protocol": "HTTPS",
+            "backend-protocol": "HTTP",
         }
 
         new_tls = "new-tls"
@@ -123,7 +123,7 @@ class TestCharm(TestCase):
             "service-name": harness.charm.app.name,
             "service-port": UI_PORT,
             "tls-secret-name": new_tls,
-            "backend-protocol": "HTTPS",
+            "backend-protocol": "HTTP",
         }
 
     def test_ready(self):

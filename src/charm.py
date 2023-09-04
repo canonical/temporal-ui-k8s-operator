@@ -63,6 +63,7 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         self._state = State(self.app, lambda: self.model.get_relation("peer"))
 
         # Handle basic charm lifecycle.
+        self.framework.observe(self.on.peer_relation_changed, self._on_peer_relation_changed)
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.temporal_ui_pebble_ready, self._on_temporal_ui_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
@@ -71,6 +72,8 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         self.framework.observe(self.on.ui_relation_joined, self._on_ui_relation_joined)
         self.framework.observe(self.on.ui_relation_changed, self._on_ui_relation_changed)
         self.framework.observe(self.on.ui_relation_broken, self._on_ui_relation_broken)
+
+        self.framework.observe(self.on.restart_action, self._on_restart)
 
         # Handle Ingress.
         self._require_nginx_route()
@@ -83,7 +86,7 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             service_name=self.app.name,
             service_port=self.config["port"],
             tls_secret_name=self.config["tls-secret-name"],
-            backend_protocol="HTTPS",
+            backend_protocol="HTTP",
         )
 
     @log_event_handler(logger)
@@ -105,6 +108,15 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         self._update(event)
 
     @log_event_handler(logger)
+    def _on_peer_relation_changed(self, event):
+        """Handle peer relation changed event.
+
+        Args:
+            event: The event triggered when the relation changed.
+        """
+        self._update(event)
+
+    @log_event_handler(logger)
     def _on_config_changed(self, event):
         """Handle configuration changes.
 
@@ -115,14 +127,37 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         self._update(event)
 
     @log_event_handler(logger)
+    def _on_restart(self, event):
+        """Restart Temporal ui action handler.
+
+        Args:
+            event:The event triggered by the restart action
+        """
+        container = self.unit.get_container(self.name)
+        if not container.can_connect():
+            event.defer()
+            return
+
+        self.unit.status = MaintenanceStatus("restarting ui")
+        container.restart(self.name)
+
+        event.set_results({"result": "worker successfully restarted"})
+
+    @log_event_handler(logger)
     def _on_ui_relation_joined(self, event):
         """Handle joining a ui:temporal relation.
 
         Args:
             event: The event triggered when the relation changed.
         """
+        if not self._state.is_ready():
+            event.defer()
+            return
+
         self.unit.status = WaitingStatus(f"handling {event.relation.name} change")
-        self._state.server_status = event.relation.data[event.app].get("server_status")
+        if self.unit.is_leader():
+            self._state.server_status = event.relation.data[event.app].get("server_status")
+
         self._update(event)
 
     @log_event_handler(logger)
@@ -132,7 +167,13 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         Args:
             event: The event triggered when the relation changed.
         """
-        self._state.server_status = event.relation.data[event.app].get("server_status")
+        if not self._state.is_ready():
+            event.defer()
+            return
+
+        if self.unit.is_leader():
+            self._state.server_status = event.relation.data[event.app].get("server_status")
+
         logger.debug(f"ui:temporal: server is {self._state.server_status}")
         self._update(event)
 
@@ -143,8 +184,14 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         Args:
             event: The event triggered when the relation changed.
         """
+        if not self._state.is_ready():
+            event.defer()
+            return
+
         self.unit.status = WaitingStatus(f"handling {event.relation.name} removal")
-        self._state.server_status = "blocked"
+        if self.unit.is_leader():
+            self._state.server_status = "blocked"
+
         self._update(event)
 
     def _validate(self):
