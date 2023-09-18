@@ -9,9 +9,10 @@
 # pylint:disable=protected-access
 
 import json
-from unittest import TestCase
+from unittest import TestCase, mock
 
-from ops.model import BlockedStatus
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
+from ops.pebble import CheckStatus
 from ops.testing import Harness
 
 from charm import TemporalUiK8SOperatorCharm
@@ -80,12 +81,6 @@ class TestCharm(TestCase):
         """The charm relates correctly to the nginx ingress charm and can be configured."""
         harness = self.harness
 
-        # Simulate peer relation readiness.
-        harness.add_relation("peer", "temporal")
-
-        # Add the temporal relation.
-        harness.add_relation("ui", "temporal")
-
         simulate_lifecycle(harness)
 
         nginx_route_relation_id = harness.add_relation("nginx-route", "ingress")
@@ -130,12 +125,6 @@ class TestCharm(TestCase):
         """The pebble plan is correctly generated when the charm is ready."""
         harness = self.harness
 
-        # Simulate peer relation readiness.
-        harness.add_relation("peer", "temporal")
-
-        # Add the temporal relation.
-        harness.add_relation("ui", "temporal")
-
         simulate_lifecycle(harness)
 
         # The plan is generated after pebble is ready.
@@ -152,6 +141,7 @@ class TestCharm(TestCase):
                         "TEMPORAL_DEFAULT_NAMESPACE": "default",
                         "TEMPORAL_AUTH_ENABLED": False,
                     },
+                    "on-check-failure": {"up": "ignore"},
                 }
             },
         }
@@ -166,12 +156,6 @@ class TestCharm(TestCase):
     def test_auth(self):
         """The pebble plan is correctly generated when the charm is ready."""
         harness = self.harness
-
-        # Simulate peer relation readiness.
-        harness.add_relation("peer", "temporal")
-
-        # Add the temporal relation.
-        harness.add_relation("ui", "temporal")
 
         simulate_lifecycle(harness)
         harness.add_relation("nginx-route", "ingress")
@@ -204,6 +188,14 @@ class TestCharm(TestCase):
                         "TEMPORAL_AUTH_SCOPES": "[openid,profile,email]",
                         "TEMPORAL_AUTH_CALLBACK_URL": f"https://{harness.model.config['external-hostname']}/auth/sso/callback",
                     },
+                    # "checks": {
+                    #     "up": {
+                    #         "override": "replace",
+                    #         "period": "10s",
+                    #         "http": {"url": "http://localhost:8080/"},
+                    #     }
+                    # },
+                    "on-check-failure": {"up": "ignore"},
                 }
             },
         }
@@ -215,6 +207,32 @@ class TestCharm(TestCase):
         service = harness.model.unit.get_container(APP_NAME).get_service(APP_NAME)
         self.assertTrue(service.is_running())
 
+    def test_update_status_up(self):
+        """The charm updates the unit status to active based on UP status."""
+        harness = self.harness
+
+        simulate_lifecycle(harness)
+
+        container = harness.model.unit.get_container(APP_NAME)
+        container.get_check = mock.Mock(status="up")
+        container.get_check.return_value.status = CheckStatus.UP
+        harness.charm.on.update_status.emit()
+
+        self.assertEqual(harness.model.unit.status, ActiveStatus())
+
+    def test_update_status_down(self):
+        """The charm updates the unit status to maintenance based on DOWN status."""
+        harness = self.harness
+
+        simulate_lifecycle(harness)
+
+        container = harness.model.unit.get_container(APP_NAME)
+        container.get_check = mock.Mock(status="up")
+        container.get_check.return_value.status = CheckStatus.DOWN
+        harness.charm.on.update_status.emit()
+
+        self.assertEqual(harness.model.unit.status, MaintenanceStatus("Status check: DOWN"))
+
 
 def simulate_lifecycle(harness):
     """Simulate a healthy charm life-cycle.
@@ -225,6 +243,12 @@ def simulate_lifecycle(harness):
     # Simulate pebble readiness.
     container = harness.model.unit.get_container(APP_NAME)
     harness.charm.on.temporal_ui_pebble_ready.emit(container)
+
+    # Simulate peer relation readiness.
+    harness.add_relation("peer", "temporal")
+
+    # Add the temporal relation.
+    harness.add_relation("ui", "temporal")
 
     # Simulate server readiness.
     app = type("App", (), {"name": "temporal-ui-k8s"})()

@@ -14,6 +14,7 @@ from jinja2 import Environment, FileSystemLoader
 from ops import main
 from ops.charm import CharmBase
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
+from ops.pebble import CheckStatus
 
 from log import log_event_handler
 from state import State
@@ -74,6 +75,7 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         self.framework.observe(self.on.ui_relation_broken, self._on_ui_relation_broken)
 
         self.framework.observe(self.on.restart_action, self._on_restart)
+        self.framework.observe(self.on.update_status, self._on_update_status)
 
         # Handle Ingress.
         self._require_nginx_route()
@@ -142,6 +144,27 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         container.restart(self.name)
 
         event.set_results({"result": "worker successfully restarted"})
+
+    @log_event_handler(logger)
+    def _on_update_status(self, event):
+        """Handle `update-status` events.
+
+        Args:
+            event: The `update-status` event triggered at intervals.
+        """
+        try:
+            self._validate()
+        except ValueError:
+            return
+
+        container = self.unit.get_container(self.name)
+
+        check = container.get_check("up")
+        if check.status != CheckStatus.UP:
+            self.unit.status = MaintenanceStatus("Status check: DOWN")
+            return
+
+        self.unit.status = ActiveStatus()
 
     @log_event_handler(logger)
     def _on_ui_relation_joined(self, event):
@@ -271,6 +294,14 @@ class TemporalUiK8SOperatorCharm(CharmBase):
                     # Including config values here so that a change in the
                     # config forces replanning to restart the service.
                     "environment": context,
+                    "on-check-failure": {"up": "ignore"},
+                }
+            },
+            "checks": {
+                "up": {
+                    "override": "replace",
+                    "period": "10s",
+                    "http": {"url": f"http://localhost:{self.config['port']}/"},
                 }
             },
         }
@@ -278,7 +309,7 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         container.add_layer(self.name, pebble_layer, combine=True)
         container.replan()
 
-        self.unit.status = ActiveStatus()
+        self.unit.status = MaintenanceStatus("replanning application")
 
 
 if __name__ == "__main__":  # pragma: nocover
