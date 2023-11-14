@@ -2,6 +2,12 @@ temporalGrpcAddress: {{ TEMPORAL_ADDRESS | default("temporal-k8s:7233") }}
 port: {{ TEMPORAL_UI_PORT | default("8080") }}
 enableUi: {{ TEMPORAL_UI_ENABLED | default("true") }}
 defaultNamespace: {{ TEMPORAL_DEFAULT_NAMESPACE | default("default") }}
+workflowTerminateDisabled: {{ TEMPORAL_WORKFLOW_TERMINATE_DISABLED | default("false") }}
+workflowCancelDisabled: {{ TEMPORAL_WORKFLOW_CANCEL_DISABLED | default("false") }}
+workflowSignalDisabled: {{ TEMPORAL_WORKFLOW_SIGNAL_DISABLED | default("false") }}
+workflowResetDisabled: {{ TEMPORAL_WORKFLOW_RESET_DISABLED | default("false") }}
+batchActionsDisabled: {{ TEMPORAL_BATCH_ACTIONS_DISABLED | default("false") }}
+hideWorkflowQueryErrors: {{ TEMPORAL_HIDE_WORKFLOW_QUERY_ERRORS | default("false") }}
 auth:
   enabled: {{ TEMPORAL_AUTH_ENABLED | default("false")}}
   providers:
@@ -12,3 +18,7 @@ auth:
       clientSecret: {{ TEMPORAL_AUTH_CLIENT_SECRET | default("") }}
       scopes: {{ TEMPORAL_AUTH_SCOPES | default("") }}
       callbackUrl: {{ TEMPORAL_AUTH_CALLBACK_URL | default("") }}
+codec:
+  endpoint: {{ TEMPORAL_CODEC_ENDPOINT | default("") }}
+  passAccessToken: {{ TEMPORAL_CODEC_PASS_ACCESS_TOKEN | default("false") }}
+  includeCredentials: {{ TEMPORAL_CODEC_INCLUDE_CREDENTIALS | default("false") }}
