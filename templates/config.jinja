@@ -1,14 +1,24 @@
 temporalGrpcAddress: {{ TEMPORAL_ADDRESS | default("temporal-k8s:7233") }}
 port: {{ TEMPORAL_UI_PORT | default("8080") }}
 enableUi: {{ TEMPORAL_UI_ENABLED | default("true") }}
-defaultNamespace: {{ TEMPORAL_DEFAULT_NAMESPACE | default("default") }}
+defaultNamespace: {{ TEMPORAL_DEFAULT_NAMESPACE }}
+workflowTerminateDisabled: {{ TEMPORAL_WORKFLOW_TERMINATE_DISABLED }}
+workflowCancelDisabled: {{ TEMPORAL_WORKFLOW_CANCEL_DISABLED }}
+workflowSignalDisabled: {{ TEMPORAL_WORKFLOW_SIGNAL_DISABLED }}
+workflowResetDisabled: {{ TEMPORAL_WORKFLOW_RESET_DISABLED }}
+batchActionsDisabled: {{ TEMPORAL_BATCH_ACTIONS_DISABLED }}
+hideWorkflowQueryErrors: {{ TEMPORAL_HIDE_WORKFLOW_QUERY_ERRORS }}
 auth:
-  enabled: {{ TEMPORAL_AUTH_ENABLED | default("false")}}
+  enabled: {{ TEMPORAL_AUTH_ENABLED }}
   providers:
     - label: Auth0 oidc # for internal use; in future may expose as button text
       type: oidc # for futureproofing; only oidc is supported today
-      providerUrl: {{ TEMPORAL_AUTH_PROVIDER_URL | default("") }}
-      clientId: {{ TEMPORAL_AUTH_CLIENT_ID | default("") }}
-      clientSecret: {{ TEMPORAL_AUTH_CLIENT_SECRET | default("") }}
-      scopes: {{ TEMPORAL_AUTH_SCOPES | default("") }}
-      callbackUrl: {{ TEMPORAL_AUTH_CALLBACK_URL | default("") }}
+      providerUrl: {{ TEMPORAL_AUTH_PROVIDER_URL }}
+      clientId: {{ TEMPORAL_AUTH_CLIENT_ID }}
+      clientSecret: {{ TEMPORAL_AUTH_CLIENT_SECRET }}
+      scopes: {{ TEMPORAL_AUTH_SCOPES }}
+      callbackUrl: {{ TEMPORAL_AUTH_CALLBACK_URL }}
+codec:
+  endpoint: {{ TEMPORAL_CODEC_ENDPOINT }}
+  passAccessToken: {{ TEMPORAL_CODEC_PASS_ACCESS_TOKEN }}
+  includeCredentials: {{ TEMPORAL_CODEC_INCLUDE_CREDENTIALS }}

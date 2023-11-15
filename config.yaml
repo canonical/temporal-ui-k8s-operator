@@ -44,7 +44,7 @@ options:
   auth-provider-url:
     description: |
         The .well-known IDP discovery URL for authentication and authorization.
-    default: ""
+    default: "https://accounts.google.com"
     type: string
   auth-client-id:
     description: |
@@ -61,3 +61,43 @@ options:
         The comma-separated array of resources required to be accessed from the access token.
     default: "[openid,profile,email]"
     type: string
+  codec-endpoint:
+    description: |
+        The endpoint for the Codec Server, if configured.
+    default: ""
+    type: string
+  codec-pass-access-token:
+    description: |
+        Whether to send a JWT access token as "authorization" header in requests with the Codec Server.
+    default: False
+    type: boolean
+  workflow-terminate-disabled:
+    description: |
+        Whether or not workflow termination is disabled through the UI.
+    default: False
+    type: boolean
+  workflow-cancel-disabled:
+    description: |
+        Whether or not workflow cancellation is disabled through the UI.
+    default: False
+    type: boolean
+  workflow-signal-disabled:
+    description: |
+        Whether or not workflow signals are disabled through the UI.
+    default: False
+    type: boolean
+  workflow-reset-disabled:
+    description: |
+        Whether or not workflow resetting is disabled through the UI.
+    default: False
+    type: boolean
+  batch-actions-disabled:
+    description: |
+        Whether or not batch actions are disabled through the UI.
+    default: False
+    type: boolean
+  hide-workflow-query-errors:
+    description: |
+        Whether or not workflow query errors are hidden on the UI.
+    default: False
+    type: boolean

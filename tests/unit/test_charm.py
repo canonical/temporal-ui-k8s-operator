@@ -140,6 +140,14 @@ class TestCharm(TestCase):
                         "TEMPORAL_UI_PORT": 8080,
                         "TEMPORAL_DEFAULT_NAMESPACE": "default",
                         "TEMPORAL_AUTH_ENABLED": False,
+                        "TEMPORAL_WORKFLOW_CANCEL_DISABLED": False,
+                        "TEMPORAL_WORKFLOW_RESET_DISABLED": False,
+                        "TEMPORAL_WORKFLOW_SIGNAL_DISABLED": False,
+                        "TEMPORAL_WORKFLOW_TERMINATE_DISABLED": False,
+                        "TEMPORAL_HIDE_WORKFLOW_QUERY_ERRORS": False,
+                        "TEMPORAL_CODEC_ENDPOINT": "",
+                        "TEMPORAL_CODEC_PASS_ACCESS_TOKEN": False,
+                        "TEMPORAL_BATCH_ACTIONS_DISABLED": False,
                     },
                     "on-check-failure": {"up": "ignore"},
                 }
@@ -187,14 +195,15 @@ class TestCharm(TestCase):
                         "TEMPORAL_AUTH_CLIENT_SECRET": "some-client-secret",
                         "TEMPORAL_AUTH_SCOPES": "[openid,profile,email]",
                         "TEMPORAL_AUTH_CALLBACK_URL": f"https://{harness.model.config['external-hostname']}/auth/sso/callback",
+                        "TEMPORAL_WORKFLOW_CANCEL_DISABLED": False,
+                        "TEMPORAL_WORKFLOW_RESET_DISABLED": False,
+                        "TEMPORAL_WORKFLOW_SIGNAL_DISABLED": False,
+                        "TEMPORAL_WORKFLOW_TERMINATE_DISABLED": False,
+                        "TEMPORAL_HIDE_WORKFLOW_QUERY_ERRORS": False,
+                        "TEMPORAL_CODEC_ENDPOINT": "",
+                        "TEMPORAL_CODEC_PASS_ACCESS_TOKEN": False,
+                        "TEMPORAL_BATCH_ACTIONS_DISABLED": False,
                     },
-                    # "checks": {
-                    #     "up": {
-                    #         "override": "replace",
-                    #         "period": "10s",
-                    #         "http": {"url": "http://localhost:8080/"},
-                    #     }
-                    # },
                     "on-check-failure": {"up": "ignore"},
                 }
             },

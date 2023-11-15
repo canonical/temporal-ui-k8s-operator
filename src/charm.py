@@ -264,6 +264,14 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             "port": "TEMPORAL_UI_PORT",
             "default-namespace": "TEMPORAL_DEFAULT_NAMESPACE",
             "auth-enabled": "TEMPORAL_AUTH_ENABLED",
+            "codec-endpoint": "TEMPORAL_CODEC_ENDPOINT",
+            "codec-pass-access-token": "TEMPORAL_CODEC_PASS_ACCESS_TOKEN",
+            "workflow-terminate-disabled": "TEMPORAL_WORKFLOW_TERMINATE_DISABLED",
+            "workflow-cancel-disabled": "TEMPORAL_WORKFLOW_CANCEL_DISABLED",
+            "workflow-signal-disabled": "TEMPORAL_WORKFLOW_SIGNAL_DISABLED",
+            "workflow-reset-disabled": "TEMPORAL_WORKFLOW_RESET_DISABLED",
+            "batch-actions-disabled": "TEMPORAL_BATCH_ACTIONS_DISABLED",
+            "hide-workflow-query-errors": "TEMPORAL_HIDE_WORKFLOW_QUERY_ERRORS",
         }
 
         context = {config_key: self.config[key] for key, config_key in options.items()}
