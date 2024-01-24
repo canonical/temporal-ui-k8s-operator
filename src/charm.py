@@ -11,7 +11,7 @@ import os
 
 from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
 from jinja2 import Environment, FileSystemLoader
-from ops import main
+from ops import main, pebble
 from ops.charm import CharmBase
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 from ops.pebble import CheckStatus
@@ -158,13 +158,33 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             return
 
         container = self.unit.get_container(self.name)
+        valid_pebble_plan = self._validate_pebble_plan(container)
+        if not valid_pebble_plan:
+            self._update(event)
+            return
 
         check = container.get_check("up")
         if check.status != CheckStatus.UP:
             self.unit.status = MaintenanceStatus("Status check: DOWN")
             return
 
-        self.unit.status = ActiveStatus()
+        message = "auth enabled" if self.config["auth-enabled"] else ""
+        self.unit.status = ActiveStatus(message)
+
+    def _validate_pebble_plan(self, container):
+        """Validate Temporal UI pebble plan.
+
+        Args:
+            container: application container
+
+        Returns:
+            bool of pebble plan validity
+        """
+        try:
+            plan = container.get_plan().to_dict()
+            return bool(plan and plan["services"].get(self.name, {}).get("on-check-failure"))
+        except pebble.ConnectionError:
+            return False
 
     @log_event_handler(logger)
     def _on_ui_relation_joined(self, event):
