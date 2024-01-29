@@ -20,6 +20,7 @@ from state import State
 
 APP_NAME = "temporal-ui"
 UI_PORT = "8080"
+mock_incomplete_pebble_plan = {"services": {"temporal-ui": {"override": "replace"}}}
 
 
 class TestCharm(TestCase):
@@ -241,6 +242,37 @@ class TestCharm(TestCase):
         harness.charm.on.update_status.emit()
 
         self.assertEqual(harness.model.unit.status, MaintenanceStatus("Status check: DOWN"))
+
+    def test_incomplete_pebble_plan(self):
+        """The charm re-applies the pebble plan if incomplete."""
+        harness = self.harness
+        simulate_lifecycle(harness)
+
+        container = harness.model.unit.get_container("temporal-ui")
+        container.add_layer("temporal-ui", mock_incomplete_pebble_plan, combine=True)
+        harness.charm.on.update_status.emit()
+
+        self.assertEqual(
+            harness.model.unit.status,
+            MaintenanceStatus("replanning application"),
+        )
+        plan = harness.get_container_pebble_plan("temporal-ui").to_dict()
+        assert plan != mock_incomplete_pebble_plan
+
+    @mock.patch("charm.TemporalUiK8SOperatorCharm._validate_pebble_plan", return_value=True)
+    def test_missing_pebble_plan(self, mock_validate_pebble_plan):
+        """The charm re-applies the pebble plan if missing."""
+        harness = self.harness
+        simulate_lifecycle(harness)
+
+        mock_validate_pebble_plan.return_value = False
+        harness.charm.on.update_status.emit()
+        self.assertEqual(
+            harness.model.unit.status,
+            MaintenanceStatus("replanning application"),
+        )
+        plan = harness.get_container_pebble_plan("temporal-ui").to_dict()
+        assert plan is not None
 
 
 def simulate_lifecycle(harness):
