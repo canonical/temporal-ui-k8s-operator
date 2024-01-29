@@ -182,8 +182,8 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         """
         try:
             plan = container.get_plan().to_dict()
-            return bool(plan and plan["services"].get(self.name, {}).get("on-check-failure"))
-        except pebble.ConnectionError:
+            return bool(plan["services"][self.name]["on-check-failure"])
+        except (KeyError, pebble.ConnectionError):
             return False
 
     @log_event_handler(logger)
