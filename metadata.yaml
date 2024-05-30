@@ -47,7 +47,7 @@ containers:
   temporal-ui:
     resource: temporal-ui-image
     # Included for simplicity in integration tests.
-    upstream-source: temporalio/ui:2.21.3
+    upstream-source: temporalio/ui:2.27.1
 
 resources:
   temporal-ui-image:

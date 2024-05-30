@@ -31,10 +31,10 @@ async def deploy(ops_test: OpsTest):
     """The app is up and running."""
     # Deploy temporal server, temporal admin and postgresql charms.
     asyncio.gather(
-        ops_test.model.deploy(APP_NAME_SERVER, channel="stable"),
+        ops_test.model.deploy(APP_NAME_SERVER, channel="stable", config={"num-history-shards": 1}),
         ops_test.model.deploy(APP_NAME_ADMIN, channel="stable"),
         ops_test.model.deploy("postgresql-k8s", channel="14", trust=True),
-        ops_test.model.deploy("nginx-ingress-integrator", channel="edge", revision=71, trust=True),
+        ops_test.model.deploy("nginx-ingress-integrator", channel="edge", revision=100, trust=True),
     )
 
     charm = await ops_test.build_charm(".")
@@ -50,8 +50,15 @@ async def deploy(ops_test: OpsTest):
             timeout=600,
         )
         await ops_test.model.wait_for_idle(
-            apps=["postgresql-k8s", "nginx-ingress-integrator"],
+            apps=["postgresql-k8s"],
             status="active",
+            raise_on_blocked=False,
+            timeout=1200,
+        )
+
+        await ops_test.model.wait_for_idle(
+            apps=["nginx-ingress-integrator"],
+            status="waiting",
             raise_on_blocked=False,
             timeout=1200,
         )

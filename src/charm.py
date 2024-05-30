@@ -20,6 +20,7 @@ from log import log_event_handler
 from state import State
 
 REQUIRED_AUTH_PARAMETERS = ["auth-provider-url", "auth-client-id", "auth-client-secret", "auth-scopes"]
+WORKLOAD_VERSION = "2.27.1"
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
@@ -168,6 +169,7 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             self.unit.status = MaintenanceStatus("Status check: DOWN")
             return
 
+        self.unit.set_workload_version(WORKLOAD_VERSION)
         message = "auth enabled" if self.config["auth-enabled"] else ""
         self.unit.status = ActiveStatus(message)
 
