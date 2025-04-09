@@ -153,6 +153,13 @@ class TestCharm(TestCase):
                     "on-check-failure": {"up": "ignore"},
                 }
             },
+            "checks": {
+                "up": {
+                    "http": {"url": "http://localhost:8080/"},
+                    "override": "replace",
+                    "period": "10s",
+                }
+            },
         }
 
         got_plan = harness.get_container_pebble_plan(APP_NAME).to_dict()
@@ -206,6 +213,13 @@ class TestCharm(TestCase):
                         "TEMPORAL_BATCH_ACTIONS_DISABLED": False,
                     },
                     "on-check-failure": {"up": "ignore"},
+                }
+            },
+            "checks": {
+                "up": {
+                    "http": {"url": "http://localhost:8080/"},
+                    "override": "replace",
+                    "period": "10s",
                 }
             },
         }
