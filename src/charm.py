@@ -10,8 +10,13 @@ import logging
 import os
 
 from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
+from charms.traefik_k8s.v2.ingress import (
+    IngressPerAppReadyEvent,
+    IngressPerAppRequirer,
+    IngressPerAppRevokedEvent,
+)
 from jinja2 import Environment, FileSystemLoader
-from ops import main, pebble
+from ops import Port, main, pebble
 from ops.charm import CharmBase
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 from ops.pebble import CheckStatus
@@ -78,7 +83,12 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         self.framework.observe(self.on.restart_action, self._on_restart)
         self.framework.observe(self.on.update_status, self._on_update_status)
 
-        # Handle Ingress.
+        # Handle Ingress with Traefik
+        self.ingress = IngressPerAppRequirer(self, port=self.config["port"], strip_prefix=True)
+        self.framework.observe(self.ingress.on.ready, self._on_ingress_ready)
+        self.framework.observe(self.ingress.on.revoked, self._on_ingress_revoked)
+
+        # Handle Ingress with nginx
         self._require_nginx_route()
 
     def _require_nginx_route(self):
@@ -91,6 +101,15 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             tls_secret_name=self.config["tls-secret-name"],
             backend_protocol="HTTP",
         )
+
+    # Event handlers for Traefik ingress
+    def _on_ingress_ready(self, event: IngressPerAppReadyEvent):
+        """Handle the `IngressPerAppReadyEvent`."""
+        logger.info("This app's ingress URL: %s", event.url)
+
+    def _on_ingress_revoked(self, event: IngressPerAppRevokedEvent):
+        """Handle the `IngressPerAppRevokedEvent`."""
+        logger.info("This app no longer has ingress")
 
     @log_event_handler(logger)
     def _on_install(self, event):
@@ -350,6 +369,7 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         }
 
         container.add_layer(self.name, pebble_layer, combine=True)
+        self.unit.set_ports(Port(protocol="tcp", port=self.config["port"]))
         container.replan()
 
         self.unit.status = MaintenanceStatus("replanning application")
