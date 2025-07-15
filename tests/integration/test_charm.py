@@ -84,7 +84,7 @@ async def deploy(ops_test: OpsTest):
             timeout=300,
         )
 
-        await ops_test.model.integrate(f"{APP_NAME:nginx-route}", "nginx-ingress-integrator:nginx-route")
+        await ops_test.model.integrate(f"{APP_NAME}:nginx-route", "nginx-ingress-integrator:nginx-route")
 
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME, "nginx-ingress-integrator"],
