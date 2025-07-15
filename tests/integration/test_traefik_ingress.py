@@ -76,4 +76,4 @@ class TestDeployment:
             json.loads(show_proxified_endpoints.results.get("proxied-endpoints")).get("temporal-ui-k8s").get("url")
         )
 
-        assert requests.get(f"{endpoint}/-/ready").status_code == 200
+        assert requests.get(f"{endpoint}/-/ready", timeout=10).status_code == 200
