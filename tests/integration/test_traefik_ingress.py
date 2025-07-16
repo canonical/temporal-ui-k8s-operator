@@ -43,19 +43,16 @@ async def deploy(ops_test: OpsTest):
         ops_test.model.deploy(TRAEFIK_K8S, channel=TRAEFIK_K8S_CHANNEL, trust=TRAEFIK_K8S_TRUST),
     )
 
+    # Build and deploy temporal-ui-k8s
+    charm = await ops_test.build_charm(".")
+    resources = {"temporal-ui-image": METADATA["containers"]["temporal-ui"]["upstream-source"]}
+    await ops_test.model.deploy(charm, resources=resources, application_name=APP_NAME)
+
+    # Add all required relations
     async with ops_test.fast_forward():
         await ops_test.model.integrate(f"{TEMPORAL_SERVER}:db", f"{POSTGRESQL_K8S}:database")
         await ops_test.model.integrate(f"{TEMPORAL_SERVER}:visibility", f"{POSTGRESQL_K8S}:database")
         await ops_test.model.integrate(f"{TEMPORAL_SERVER}:admin", f"{TEMPORAL_ADMIN}:admin")
-
-    # Build and deploy temporal-ui-k8s
-    charm = await ops_test.build_charm(".")
-    resources = {"temporal-ui-image": METADATA["containers"]["temporal-ui"]["upstream-source"]}
-
-    await ops_test.model.deploy(charm, resources=resources, application_name=APP_NAME)
-
-    # Add relations to temporal-ui-k8s
-    async with ops_test.fast_forward():
         await ops_test.model.integrate(f"{APP_NAME}:ui", f"{TEMPORAL_SERVER}:ui")
         await ops_test.model.integrate(f"{APP_NAME}:ingress", f"{TRAEFIK_K8S}:ingress")
 
