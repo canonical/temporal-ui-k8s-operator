@@ -39,6 +39,9 @@ provides:
     limit: 1
 
 requires:
+  ingress:
+    interface: ingress
+    limit: 1
   nginx-route:
     interface: nginx-route
     limit: 1

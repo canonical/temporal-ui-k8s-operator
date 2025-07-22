@@ -58,7 +58,34 @@ def test_blocked_by_peer_relation_not_ready(
     assert state_out.unit_status == ops.BlockedStatus("peer relation not ready")
 
 
-def test_ingress(
+def test_blocked_on_two_ingresses(
+    context,
+    state,
+    temporal_ui_container,
+    temporal_ui_container_initialized,
+    ui_relation,
+    traefik_ingress_relation,
+    all_required_relations,
+):
+
+    all_required_relations.append(traefik_ingress_relation)
+    state = dataclasses.replace(state, relations=all_required_relations)
+
+    state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
+
+    state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
+    state_out = context.run(context.on.relation_changed(ui_relation), state_out)
+
+    state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
+
+    # Add the traefik relation
+    new_state = context.run(context.on.relation_changed(traefik_ingress_relation), state_out)
+    assert new_state.unit_status == ops.BlockedStatus(
+        "Only one ingress solution is allowed - remove the ingress or the nginx-route relation."
+    )
+
+
+def test_ingress_with_nginx(
     context,
     state,
     temporal_ui_container,
