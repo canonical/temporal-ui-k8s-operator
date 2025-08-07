@@ -24,6 +24,8 @@ jobs:
           provider: microk8s
           microk8s-addons: "ingress storage dns rbac registry metallb:10.15.119.2-10.15.119.4"
           channel: 1.25-strict/stable
+      - name: Pack charm
+        run: charmcraft pack
       - name: Run integration tests
         run: tox -e integration -- -k ${{ matrix.modules }}
       - name: Dump logs

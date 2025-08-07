@@ -20,7 +20,7 @@ def juju(request: pytest.FixtureRequest):
         yield model
 
         if request.session.testsfailed:
-            log = model.debuglog(limit=1000)
+            log = model.debug_log(limit=1000)
             print(log, end="")
 
 
