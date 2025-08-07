@@ -50,7 +50,7 @@ containers:
   temporal-ui:
     resource: temporal-ui-image
     # Included for simplicity in integration tests.
-    upstream-source: temporalio/ui:2.27.1
+    upstream-source: ubuntu/temporal-ui:2.39-24.04_edge@sha256:f14a4b14f32a6850a78273a3796e7812ce5aa85cd2fee6853dba9f08547f5f68
 
 resources:
   temporal-ui-image:
