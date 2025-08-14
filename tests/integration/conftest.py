@@ -9,6 +9,12 @@ import jubilant
 import pytest
 import yaml
 
+POSTGRESQL_K8S_CHANNEL = "14/stable"
+TEMPORAL_CHANNEL = "1.23/edge"
+
+METADATA = yaml.safe_load(pathlib.Path("./metadata.yaml").read_text())
+TEMPORAL_UI_IMAGE = METADATA["resources"]["temporal-ui-image"]["upstream-source"]
+
 
 @pytest.fixture(scope="module")
 def juju(request: pytest.FixtureRequest):
@@ -24,9 +30,22 @@ def juju(request: pytest.FixtureRequest):
             print(log, end="")
 
 
-@pytest.fixture(scope="module")
-def ui_latest(juju: jubilant.Juju):
-    """Deploy temporal-ui from the latest track."""
+def deploy_temporal_stack(
+    juju: jubilant.Juju,
+    postgresql_channel: str = POSTGRESQL_K8S_CHANNEL,
+    temporal_server_channel: str = TEMPORAL_CHANNEL,
+    temporal_admin_channel: str = TEMPORAL_CHANNEL,
+    temporal_ui_channel: str = TEMPORAL_CHANNEL,
+):
+    """Helper function to deploy the temporal stack.
+
+    Args:
+        juju: jubilant Juju object
+        postgresql_channel: channel for postgresql-k8s
+        temporal_server_channel: channel for temporal-k8s
+        temporal_admin_channel: channel for temporal-admin-k8s
+        temporal_ui_channel: channel for temporal-ui-k8s
+    """
     juju.model_config(
         values={
             "update-status-hook-interval": "10s",
@@ -36,7 +55,7 @@ def ui_latest(juju: jubilant.Juju):
     juju.deploy(
         charm="postgresql-k8s",
         app="postgresql-k8s",
-        channel="14/stable",
+        channel=postgresql_channel,
         trust=True,
         base="ubuntu@22.04",
     )
@@ -44,7 +63,7 @@ def ui_latest(juju: jubilant.Juju):
     juju.deploy(
         charm="temporal-k8s",
         app="temporal-k8s",
-        channel="1.23/edge",
+        channel=temporal_server_channel,
         config={
             "num-history-shards": 1,
         },
@@ -54,14 +73,14 @@ def ui_latest(juju: jubilant.Juju):
     juju.deploy(
         charm="temporal-admin-k8s",
         app="temporal-admin-k8s",
-        channel="1.23/edge",
+        channel=temporal_admin_channel,
         base="ubuntu@22.04",
     )
 
     juju.deploy(
         charm="temporal-ui-k8s",
         app="temporal-ui-k8s",
-        channel="latest/stable",
+        channel=temporal_ui_channel,
         base="ubuntu@22.04",
     )
 
@@ -81,6 +100,12 @@ def ui_latest(juju: jubilant.Juju):
 
     juju.wait(jubilant.all_active)
 
+
+@pytest.fixture(scope="module")
+def ui_latest_track(juju: jubilant.Juju):
+    """Deploy the temporal stack with temporal-ui from the latest/edge track."""
+    deploy_temporal_stack(temporal_ui_channel="latest/edge")
+
     return "temporal-ui-k8s"
 
 
@@ -97,7 +122,6 @@ def charm_path() -> pathlib.Path:
 @pytest.fixture(scope="module")
 def charm_resources() -> dict:
     """Resources to deploy the ui-k8s locally built charm."""
-    metadata = yaml.safe_load(pathlib.Path("./metadata.yaml").read_text())
     return {
-        "temporal-ui-image": metadata["containers"]["temporal-ui"]["upstream-source"],
+        "temporal-ui-image": TEMPORAL_UI_IMAGE,
     }
