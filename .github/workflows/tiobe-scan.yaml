@@ -28,7 +28,7 @@ jobs:
       - name: Prep coverage for TICS
         run: |
           mkdir -p .cover
-          mv coverage.xml .cover/coverage.xml
+          mv coverage.xml .cover/coverage.xml --omit '*/lib/*'
       - name: TICS analysis
         uses: tiobe/tics-github-action@v3
         with:
