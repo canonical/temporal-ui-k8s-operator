@@ -104,7 +104,7 @@ def deploy_temporal_stack(
 @pytest.fixture(scope="module")
 def ui_latest_track(juju: jubilant.Juju):
     """Deploy the temporal stack with temporal-ui from the latest/edge track."""
-    deploy_temporal_stack(temporal_ui_channel="latest/edge")
+    deploy_temporal_stack(juju, temporal_ui_channel="latest/edge")
 
     return "temporal-ui-k8s"
 
