@@ -21,9 +21,9 @@ METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
 APP_NAME = METADATA["name"]
 
 TEMPORAL_SERVER = "temporal-k8s"
-TEMPORAL_SERVER_CHANNEL = "stable"
+TEMPORAL_SERVER_CHANNEL = "1.23/edge"
 TEMPORAL_ADMIN = "temporal-admin-k8s"
-TEMPORAL_ADMIN_CHANNEL = "stable"
+TEMPORAL_ADMIN_CHANNEL = "1.23/edge"
 POSTGRESQL_K8S = "postgresql-k8s"
 POSTGRESQL_K8S_CHANNEL = "14"
 POSTGRESQL_K8S_TRUST = True
