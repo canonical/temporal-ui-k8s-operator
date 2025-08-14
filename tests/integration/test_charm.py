@@ -38,7 +38,7 @@ async def deploy(ops_test: OpsTest):
     )
 
     charm = await ops_test.build_charm(".")
-    resources = {"temporal-ui-image": METADATA["containers"]["temporal-ui"]["upstream-source"]}
+    resources = {"temporal-ui-image": METADATA["resources"]["temporal-ui-image"]["upstream-source"]}
 
     await ops_test.model.deploy(charm, resources=resources, application_name=APP_NAME)
 
