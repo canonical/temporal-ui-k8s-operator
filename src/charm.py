@@ -355,7 +355,7 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             "services": {
                 self.name: {
                     "summary": "temporal ui",
-                    "command": "./ui-server --env charm start",
+                    "command": "ui-server --root /home/ui-server --env charm start",
                     "startup": "enabled",
                     "override": "replace",
                     # Including config values here so that a change in the

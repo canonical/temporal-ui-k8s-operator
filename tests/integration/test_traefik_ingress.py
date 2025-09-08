@@ -13,6 +13,7 @@ import pytest
 import pytest_asyncio
 import requests
 import yaml
+from conftest import POSTGRESQL_K8S_CHANNEL, TEMPORAL_CHANNEL
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
@@ -21,11 +22,8 @@ METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
 APP_NAME = METADATA["name"]
 
 TEMPORAL_SERVER = "temporal-k8s"
-TEMPORAL_SERVER_CHANNEL = "stable"
 TEMPORAL_ADMIN = "temporal-admin-k8s"
-TEMPORAL_ADMIN_CHANNEL = "stable"
 POSTGRESQL_K8S = "postgresql-k8s"
-POSTGRESQL_K8S_CHANNEL = "14"
 POSTGRESQL_K8S_TRUST = True
 TRAEFIK_K8S = "traefik-k8s"
 TRAEFIK_K8S_CHANNEL = "latest/stable"
@@ -37,8 +35,8 @@ async def deploy(ops_test: OpsTest):
     """The app is up and running."""
     # Deploy temporal server, temporal admin, traefik-k8s, and postgresql charms.
     asyncio.gather(
-        ops_test.model.deploy(TEMPORAL_SERVER, channel=TEMPORAL_SERVER_CHANNEL, config={"num-history-shards": 1}),
-        ops_test.model.deploy(TEMPORAL_ADMIN, channel=TEMPORAL_ADMIN_CHANNEL),
+        ops_test.model.deploy(TEMPORAL_SERVER, channel=TEMPORAL_CHANNEL, config={"num-history-shards": 1}),
+        ops_test.model.deploy(TEMPORAL_ADMIN, channel=TEMPORAL_CHANNEL),
         ops_test.model.deploy(POSTGRESQL_K8S, channel=POSTGRESQL_K8S_CHANNEL, trust=POSTGRESQL_K8S_TRUST),
         ops_test.model.deploy(TRAEFIK_K8S, channel=TRAEFIK_K8S_CHANNEL, trust=TRAEFIK_K8S_TRUST),
     )

@@ -14,6 +14,7 @@ import pytest
 import pytest_asyncio
 import requests
 import yaml
+from conftest import POSTGRESQL_K8S_CHANNEL, TEMPORAL_CHANNEL
 from helpers import gen_patch_getaddrinfo, scale
 from pytest_operator.plugin import OpsTest
 
@@ -25,16 +26,20 @@ APP_NAME = METADATA["name"]
 APP_NAME_SERVER = "temporal-k8s"
 APP_NAME_ADMIN = "temporal-admin-k8s"
 
+NGINX_INGRESS_INTEGRATOR_CHANNEL = "latest/edge"
+
 
 @pytest_asyncio.fixture(name="deploy", scope="module")
 async def deploy(ops_test: OpsTest):
     """The app is up and running."""
     # Deploy temporal server, temporal admin and postgresql charms.
     asyncio.gather(
-        ops_test.model.deploy(APP_NAME_SERVER, channel="stable", config={"num-history-shards": 1}),
-        ops_test.model.deploy(APP_NAME_ADMIN, channel="stable"),
-        ops_test.model.deploy("postgresql-k8s", channel="14", trust=True),
-        ops_test.model.deploy("nginx-ingress-integrator", channel="edge", revision=100, trust=True),
+        ops_test.model.deploy(APP_NAME_SERVER, channel=TEMPORAL_CHANNEL, config={"num-history-shards": 1}),
+        ops_test.model.deploy(APP_NAME_ADMIN, channel=TEMPORAL_CHANNEL),
+        ops_test.model.deploy("postgresql-k8s", channel=POSTGRESQL_K8S_CHANNEL, trust=True),
+        ops_test.model.deploy(
+            "nginx-ingress-integrator", channel=NGINX_INGRESS_INTEGRATOR_CHANNEL, revision=100, trust=True
+        ),
     )
 
     charm = await ops_test.build_charm(".")

@@ -162,7 +162,7 @@ def test_ready(context, state, temporal_ui_container, temporal_ui_container_init
         "services": {
             "temporal-ui": {
                 "summary": "temporal ui",
-                "command": "./ui-server --env charm start",
+                "command": "ui-server --root /home/ui-server --env charm start",
                 "startup": "enabled",
                 "override": "replace",
                 "environment": {
@@ -215,7 +215,7 @@ def test_auth(
             "services": {
                 "temporal-ui": {
                     "summary": "temporal ui",
-                    "command": "./ui-server --env charm start",
+                    "command": "ui-server --root /home/ui-server --env charm start",
                     "startup": "enabled",
                     "override": "replace",
                     "environment": {
