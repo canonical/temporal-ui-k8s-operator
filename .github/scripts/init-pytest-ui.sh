@@ -8,3 +8,5 @@ cat > tests/conftest.py <<'EOF'
 def pytest_addoption(parser):
     parser.addoption("--charm-file", action="store", default=None)
 EOF
+
+juju add-model testing || juju switch testing || true
