@@ -16,4 +16,5 @@ jobs:
       charmcraft-channel: latest/edge
       modules: '["test_charm.py", "test_refresh.py"]'
       pre-run-script: .github/scripts/init-pytest-ui.sh
+      extra-arguments: "--model github-pr-${{ github.run_id }}-k8s"
 
