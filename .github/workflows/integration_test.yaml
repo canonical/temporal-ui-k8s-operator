@@ -15,3 +15,5 @@ jobs:
       juju-channel: 3.6/stable
       charmcraft-channel: latest/edge
       modules: '["test_charm.py", "test_refresh.py"]'
+      pre-run-script: .github/scripts/init-pytest-ui.sh
+
