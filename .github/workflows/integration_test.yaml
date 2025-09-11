@@ -14,7 +14,7 @@ jobs:
       channel: edge
       juju-channel: 3.6/stable
       charmcraft-channel: latest/edge
-      modules: '["test_charm.py", "test_refresh.py"]'
+      modules: '["test_charm.py", "test_refresh.py", "test_traefik_ingress.py"]'
       pre-run-script: .github/scripts/init-pytest-ui.sh
       extra-arguments: "--model testing --keep-models"
 
