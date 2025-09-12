@@ -17,4 +17,5 @@ jobs:
       modules: '["test_charm.py", "test_refresh.py", "test_traefik_ingress.py"]'
       pre-run-script: .github/scripts/init-pytest-ui.sh
       tmate-debug: true
+      tmate-timeout: 60
 
