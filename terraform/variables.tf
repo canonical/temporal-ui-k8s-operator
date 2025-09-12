@@ -66,7 +66,7 @@ variable "auth" {
     scopes        = optional(string, "[openid,profile,email]")
   })
   description = "Auth related configurations"
-  default = {}
+  default     = {}
 }
 
 variable "codec" {
@@ -75,7 +75,7 @@ variable "codec" {
     pass_access_token = optional(bool, false)
   })
   description = "Codec server related configurations"
-  default = {}
+  default     = {}
 }
 
 variable "workflow" {
@@ -86,7 +86,7 @@ variable "workflow" {
     reset_disabled     = optional(bool, false)
   })
   description = "Workflow related configurations"
-  default = {}
+  default     = {}
 }
 
 variable "batch_actions_disabled" {
