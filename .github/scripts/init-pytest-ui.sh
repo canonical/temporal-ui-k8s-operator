@@ -15,8 +15,11 @@ if command -v k8s >/dev/null 2>&1; then
     echo "Enabling ingress in Canonical Kubernetes..."
     sudo k8s enable ingress || true
 
-    echo "Configuring static load-balancer CIDR (same as microk8s setup)..."
-    sudo k8s set load-balancer.cidrs=10.15.119.2-10.15.119.4 \
-                 load-balancer.enabled=true load-balancer.l2-mode=true
+    echo "Deriving LB CIDR after enabling ingress..."
+    IPADDR=$(ip -4 -j route get 2.2.2.2 | jq -r '.[] | .prefsrc')
+    LB_FIRST_ADDR="$(echo "${IPADDR}" | awk -F'.' '{print $1,$2,$3,100}' OFS='.')"
+    LB_LAST_ADDR="$(echo "${IPADDR}" | awk -F'.' '{print $1,$2,$3,255}' OFS='.')"
+    LB_ADDR_RANGE="${LB_FIRST_ADDR}-${LB_LAST_ADDR}"
+    sudo k8s set load-balancer.cidrs=$LB_ADDR_RANGE load-balancer.enabled=true load-balancer.l2-mode=true
 fi
 
