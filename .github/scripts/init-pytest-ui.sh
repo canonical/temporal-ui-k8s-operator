@@ -10,3 +10,4 @@ def pytest_addoption(parser):
 EOF
 
 juju add-model testing || juju switch testing || true
+juju deploy ingress-nginx --channel edge --trust --config ingress-class=nginx
