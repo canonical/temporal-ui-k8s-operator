@@ -10,5 +10,8 @@ def pytest_addoption(parser):
 EOF
 
 juju add-model testing || juju switch testing || true
-juju deploy nginx-ingress-integrator --channel edge --trust
+if command -v k8s >/dev/null 2>&1; then
+    echo "Enabling ingress in Canonical Kubernetes..."
+    sudo k8s enable ingress || true
+fi
 
