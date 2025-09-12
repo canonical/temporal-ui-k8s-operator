@@ -10,8 +10,13 @@ def pytest_addoption(parser):
 EOF
 
 juju add-model testing || juju switch testing || true
+
 if command -v k8s >/dev/null 2>&1; then
     echo "Enabling ingress in Canonical Kubernetes..."
     sudo k8s enable ingress || true
+
+    echo "Configuring static load-balancer CIDR (same as microk8s setup)..."
+    sudo k8s set load-balancer.cidrs=10.15.119.2-10.15.119.4 \
+                 load-balancer.enabled=true load-balancer.l2-mode=true
 fi
 
