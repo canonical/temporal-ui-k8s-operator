@@ -138,8 +138,14 @@ class TestDeployment:
                 idle_period=30,
                 timeout=1200,
             )
+            svc = await ops_test.run(
+                "kubectl", "-n", "ingress-nginx",
+                "get", "svc", "ingress-nginx-controller",
+                "-o", "jsonpath={.status.loadBalancer.ingress[0].ip}"
+            )
+            ingress_ip = svc.stdout.strip()
 
-            with unittest.mock.patch.multiple(socket, getaddrinfo=gen_patch_getaddrinfo(new_hostname, "127.0.0.1")):
+            with unittest.mock.patch.multiple(socket, getaddrinfo=gen_patch_getaddrinfo(new_hostname, ingress_ip)):
                 response = requests.get(f"https://{new_hostname}", timeout=5, verify=False)  # nosec
                 assert response.status_code == 200 and 'id="svelte"' in response.text.lower()
 
