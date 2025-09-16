@@ -138,10 +138,10 @@ class TestDeployment:
                 idle_period=30,
                 timeout=1200,
             )
-            _, stdout = await ops_test.run(
-                "kubectl", "-n", "ingress-nginx",
-                "get", "svc", "ingress-nginx-controller",
-                "-o", "jsonpath={.status.loadBalancer.ingress[0].ip}"
+            exit_code, stdout, stderr = await ops_test.run(
+            "kubectl", "-n", "ingress-nginx",
+            "get", "svc", "ingress-nginx-controller",
+            "-o", "jsonpath={.status.loadBalancer.ingress[0].ip}"
             )
             ingress_ip = stdout.strip()
 
