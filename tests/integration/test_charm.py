@@ -67,10 +67,6 @@ async def deploy(ops_test: OpsTest):
             raise_on_blocked=False,
             timeout=1200,
         )
-        await ops_test.run(
-        "kubectl", "-n", ops_test.model.info.name, "patch", "svc", "nginx-ingress-integrator",
-        "-p", '{"spec": {"type": "LoadBalancer"}}'
-        ) #change service type to load-balancer
 
         assert ops_test.model.applications[APP_NAME].units[0].workload_status == "blocked"
         await ops_test.model.integrate(f"{APP_NAME_SERVER}:db", "postgresql-k8s:database")
