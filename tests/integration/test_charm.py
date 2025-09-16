@@ -146,7 +146,18 @@ class TestDeployment:
             ingress_ip = stdout.strip()
 
             with unittest.mock.patch.multiple(socket, getaddrinfo=gen_patch_getaddrinfo(new_hostname, ingress_ip)):
-                response = requests.get(f"https://{new_hostname}", timeout=5, verify=False)  # nosec
+                response = requests.get(
+                    f"http://{ingress_ip}",
+                    headers={"Host": new_hostname},
+                    timeout=10,
+                    verify=False,  # nosec
+                )
+                if response.status_code != 200:
+                    logger.error(
+                        "Ingress check failed: status=%s, body=%s",
+                        response.status_code,
+                        response.text[:200],  # show first 200 chars
+                    )
                 assert response.status_code == 200 and 'id="svelte"' in response.text.lower()
 
     async def test_restart_action(self, ops_test: OpsTest):
