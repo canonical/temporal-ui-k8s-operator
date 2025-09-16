@@ -100,11 +100,11 @@ async def deploy(ops_test: OpsTest):
 
         await ops_test.run(
             "kubectl","-n", ops_test.model.info.name,
-            "patch", "ingress",
-            "-l", f"nginx-ingress-integrator.charm.juju.is/managed-by=nginx-ingress-integrator",
+            "patch", "ingress", f"relation-11-{APP_NAME}-ingress",
             "--type=merge",
             "-p", '{"spec":{"ingressClassName": "nginx"}}',
         )
+        
 
         assert ops_test.model.applications[APP_NAME].units[0].workload_status == "active"
 
