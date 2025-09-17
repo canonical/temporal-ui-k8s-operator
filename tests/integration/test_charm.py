@@ -137,7 +137,7 @@ class TestDeployment:
             ingress_ip = stdout.strip()
             await ops_test.run(
                 "kubectl", "-n", ops_test.model.info.name,
-                "patch", f"relation-{relation_id}-{APP_NAME}-ingress",
+                "patch", f"relation-11-{APP_NAME}-ingress",
                 "--type=merge",
                 "-p", '{"spec":{"ingressClassName":"nginx"}}',
             )
