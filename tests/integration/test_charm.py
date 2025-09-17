@@ -97,15 +97,6 @@ async def deploy(ops_test: OpsTest):
             raise_on_blocked=False,
             timeout=300,
         )
-
-        await ops_test.run(
-            "kubectl","-n", ops_test.model.info.name,
-            "patch", "ingress", f"relation-11-{APP_NAME}-ingress",
-            "--type=merge",
-            "-p", '{"spec":{"ingressClassName": "nginx"}}',
-        )
-        
-
         assert ops_test.model.applications[APP_NAME].units[0].workload_status == "active"
 
 
@@ -144,6 +135,12 @@ class TestDeployment:
             "-o", "jsonpath={.status.loadBalancer.ingress[0].ip}"
             )
             ingress_ip = stdout.strip()
+            await ops_test.run(
+                "kubectl", "-n", ops_test.model.info.name,
+                "patch", f"relation-{relation_id}-{APP_NAME}-ingress",
+                "--type=merge",
+                "-p", '{"spec":{"ingressClassName":"nginx"}}',
+            )
 
             with unittest.mock.patch.multiple(socket, getaddrinfo=gen_patch_getaddrinfo(new_hostname, ingress_ip)):
                 response = requests.get(
@@ -152,12 +149,6 @@ class TestDeployment:
                     timeout=10,
                     verify=False,  # nosec
                 )
-                if response.status_code != 200:
-                    logger.error(
-                        "Ingress check failed: status=%s, body=%s",
-                        response.status_code,
-                        response.text[:200],  # show first 200 chars
-                    )
                 assert response.status_code == 200 and 'id="svelte"' in response.text.lower()
 
     async def test_restart_action(self, ops_test: OpsTest):
