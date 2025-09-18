@@ -51,4 +51,4 @@ test:
 
     just apply "./test/test.tfvars"
 
-    juju wait-for model terraform --query="forEach(units, unit => (unit.workload-status == 'blocked'))"
+    juju wait-for model terraform --query="forEach(units, unit => (unit.workload-status == 'blocked' && unit.workload-message == 'ui:temporal relation: not available'))"
