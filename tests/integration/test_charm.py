@@ -38,7 +38,11 @@ async def deploy(ops_test: OpsTest):
         ops_test.model.deploy(APP_NAME_ADMIN, channel=TEMPORAL_CHANNEL),
         ops_test.model.deploy("postgresql-k8s", channel=POSTGRESQL_K8S_CHANNEL, trust=True),
         ops_test.model.deploy(
-            "nginx-ingress-integrator", channel=NGINX_INGRESS_INTEGRATOR_CHANNEL, revision=100, trust=True, config={"ingress-class": "nginx"},
+            "nginx-ingress-integrator",
+            channel=NGINX_INGRESS_INTEGRATOR_CHANNEL,
+            revision=100,
+            trust=True,
+            config={"ingress-class": "nginx"},
         ),
     )
 
@@ -130,12 +134,17 @@ class TestDeployment:
                 timeout=1200,
             )
             exit_code, stdout, stderr = await ops_test.run(
-            "kubectl", "-n", "ingress-nginx",
-            "get", "svc", "ingress-nginx-controller",
-            "-o", "jsonpath={.status.loadBalancer.ingress[0].ip}"
+                "kubectl",
+                "-n",
+                "ingress-nginx",
+                "get",
+                "svc",
+                "ingress-nginx-controller",
+                "-o",
+                "jsonpath={.status.loadBalancer.ingress[0].ip}",
             )
             ingress_ip = stdout.strip()
-            
+
             with unittest.mock.patch.multiple(socket, getaddrinfo=gen_patch_getaddrinfo(new_hostname, ingress_ip)):
                 response = requests.get(
                     f"https://{ingress_ip}",
