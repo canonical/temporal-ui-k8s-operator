@@ -14,3 +14,9 @@ parts:
       - astral-uv
     build-packages:
       - python3-venv
+
+  extras:
+    plugin: dump
+    source: ./templates
+    organize:
+      '*': templates/
