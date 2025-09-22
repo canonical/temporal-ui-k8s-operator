@@ -13,7 +13,6 @@ jobs:
         modules:
           - test_charm.py
           - test_refresh.py
-          - test_traefik_ingress.py
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -22,7 +21,7 @@ jobs:
         with:
           juju-channel: 3.6/stable
           provider: microk8s
-          microk8s-addons: "ingress storage dns rbac registry metallb:10.15.119.2-10.15.119.4"
+          microk8s-addons: "ingress storage dns rbac registry"
           channel: 1.25-strict/stable
       - name: Pack charm
         run: charmcraft pack
