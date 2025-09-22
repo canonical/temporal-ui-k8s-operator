@@ -34,5 +34,7 @@ header:
     - 'LICENSE'
     - 'trivy.yaml'
     - 'lib/**'
+    - 'uv.lock'
+    - 'src/*.egg-info/**'
     - 'terraform/**'
   comment: on-failure
