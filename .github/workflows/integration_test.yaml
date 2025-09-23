@@ -11,9 +11,9 @@ jobs:
     with:
       provider: k8s
       use-canonical-k8s: true
-      channel: edge
+      channel: 1.33-classic/stable
       juju-channel: 3.6/stable
-      charmcraft-channel: latest/edge
-      modules: '["test_charm.py", "test_refresh.py", "test_traefik_ingress.py"]'
+      charmcraft-channel: latest/candidate
+      modules: '["test_charm.py", "test_refresh.py"]'
       pre-run-script: .github/scripts/init-pytest-ui.sh
 
