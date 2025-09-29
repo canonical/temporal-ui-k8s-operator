@@ -5,31 +5,15 @@ on:
   workflow_call:
 
 jobs:
-  integration-test-microk8s:
-    name: Integration tests (microk8s)
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        modules:
-          - test_charm.py
-          - test_refresh.py
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-      - name: Setup operator environment
-        uses: charmed-kubernetes/actions-operator@main
-        with:
-          juju-channel: 3.6/stable
-          provider: microk8s
-          microk8s-addons: "ingress storage dns rbac registry"
-          channel: 1.25-strict/stable
-      - name: Pack charm
-        run: charmcraft pack
-      - name: Run integration tests
-        run: tox -e integration -- -k ${{ matrix.modules }}
-      - name: Dump logs
-        uses: canonical/charm-logdump-action@main
-        if: failure()
-        with:
-          app: temporal-ui-k8s
-          model: testing
+  integration-tests:
+    uses: arjun11-malik/operator-workflows/.github/workflows/integration_test.yaml@main
+    secrets: inherit
+    with:
+      provider: k8s
+      use-canonical-k8s: true
+      channel: 1.33-classic/stable
+      juju-channel: 3.6/stable
+      charmcraft-channel: latest/candidate
+      modules: '["test_charm.py", "test_refresh.py"]'
+      pre-run-script: .github/scripts/init-pytest-ui.sh
+
