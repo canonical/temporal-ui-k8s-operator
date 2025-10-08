@@ -7,3 +7,5 @@ __pycache__/
 *.py[cod]
 .idea
 .vscode/
+src/temporal_ui_k8s_operator.egg-info/
+uv.lock.bak

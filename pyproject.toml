@@ -4,6 +4,65 @@
 [project]
 name = "temporal-ui-k8s-operator"
 version = "0.0"
+requires-python = ">=3.10,<3.13"
+
+[project.optional-dependencies]
+# runtime
+charm = [
+    "ops==2.21.1",
+    "Jinja2==3.1.1",
+    "pydantic>=2",
+]
+
+# unit test
+unit = [
+    "temporal-ui-k8s-operator[charm]",
+    "coverage[toml]==6.4.4",
+    "ipdb==0.13.9",
+    "pytest==7.1.3",
+    "ops[testing]==2.21.1",
+]
+
+# integration test
+integration = [
+    "temporal-ui-k8s-operator[charm]",
+    "ipdb==0.13.9",
+    "juju==3.6.1.2",
+    "pytest==7.1.3",
+    "pytest-asyncio==0.20.3",
+    "pytest-operator==0.42.0",
+    "jubilant~=1.0",
+]
+
+# lint
+lint = [
+    "mypy",
+    "pylint",
+    "pydocstyle",
+    "pytest",
+    "black==22.8.0",
+    "codespell==2.2.1",
+    "flake8==7.0.0",
+    "flake8-builtins==1.5.3",
+    "flake8-copyright==0.2.4",
+    "flake8-docstrings==1.6.0",
+    "isort==5.10.1",
+    "pep8-naming==0.13.2",
+    "pyproject-flake8==7.0.0",
+    "flake8-docstrings-complete>=1.0.3",
+    "flake8-test-docs>=1.0",
+]
+
+# formatting
+fmt = [
+    "black==22.8.0",
+    "isort==5.10.1",
+]
+
+# dev convenience (install everything)
+dev = [
+    "temporal-ui-k8s-operator[charm,unit,integration,lint,fmt]",
+]
 
 [tool.bandit]
 exclude_dirs = ["/venv/"]
@@ -36,13 +95,9 @@ max-doc-length = 99
 max-complexity = 10
 exclude = [".git", "__pycache__", ".tox", "build", "dist", "*.egg_info", "venv"]
 select = ["E", "W", "F", "C", "N", "R", "D", "H"]
-# Ignore W503, E501 because using black creates errors with this
-# Ignore D107 Missing docstring in __init__
 ignore = ["W503", "E501", "D107"]
-# D100, D101, D102, D103: Ignore missing docstrings in tests
 per-file-ignores = ["tests/*:D100,D101,D102,D103,D104"]
 docstring-convention = "google"
-# Check for properly formatted copyright header in each file
 copyright-check = "True"
 copyright-author = "Canonical Ltd."
 copyright-regexp = "Copyright\\s\\d{4}([-,]\\d{4})*\\s+%(author)s"

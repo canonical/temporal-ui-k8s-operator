@@ -1,7 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-juju add-model testing || juju switch testing || true
 
 if command -v k8s >/dev/null 2>&1; then
     echo "Enabling ingress in Canonical Kubernetes..."
