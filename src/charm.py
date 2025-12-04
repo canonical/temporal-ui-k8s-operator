@@ -11,11 +11,13 @@ import os
 
 from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
 from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
+from charms.temporal_k8s.v0.temporal_host_info import TemporalHostInfoRequirer
 from jinja2 import Environment, FileSystemLoader
 from ops import main, pebble
 from ops.charm import CharmBase
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 from ops.pebble import CheckStatus
+
 
 from log import log_event_handler
 from state import State
@@ -91,6 +93,9 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         )
         self.framework.observe(self.ingress.on.ready, self._on_ingress_ready)
         self.framework.observe(self.ingress.on.revoked, self._on_ingress_revoked)
+
+        self.host_info = TemporalHostInfoRequirer(self)
+        self.framework.observe(self.host_info.on.temporal_host_info_available, self._update)
 
     def _require_nginx_route(self):
         """Require nginx-route relation based on current configuration."""
@@ -354,6 +359,9 @@ class TemporalUiK8SOperatorCharm(CharmBase):
                     "NO_PROXY": no_proxy,
                 }
             )
+
+        if self.host_info.host and self.host_info.port:
+            context["TEMPORAL_ADDRESS"] = f"{self.host_info.host}:{self.host_info.port}"
 
         config = render("config.jinja", context)
         container.push("/home/ui-server/config/charm.yaml", config, make_dirs=True)
