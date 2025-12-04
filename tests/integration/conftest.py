@@ -97,6 +97,7 @@ def deploy_temporal_stack(
     juju.integrate("temporal-k8s:admin", "temporal-admin-k8s:admin")
 
     juju.integrate("temporal-k8s:ui", "temporal-ui-k8s:ui")
+    juju.integrate("temporal-k8s:temporal-host-info", "temporal-ui-k8s:temporal-host-info")
 
     juju.wait(jubilant.all_active)
 
