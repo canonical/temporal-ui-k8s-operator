@@ -18,7 +18,6 @@ from ops.charm import CharmBase
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 from ops.pebble import CheckStatus
 
-
 from log import log_event_handler
 from state import State
 
