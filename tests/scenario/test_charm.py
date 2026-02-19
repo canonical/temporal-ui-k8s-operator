@@ -149,7 +149,7 @@ def test_ready(context, state, temporal_ui_container, temporal_ui_container_init
                     "TEMPORAL_WORKFLOW_TERMINATE_DISABLED": False,
                     "TEMPORAL_HIDE_WORKFLOW_QUERY_ERRORS": False,
                     "TEMPORAL_CODEC_ENDPOINT": "",
-                    "TEMPORAL_CODEC_PASS_ACCESS_TOKEN": False,
+                    "TEMPORAL_CODEC_PASS_ACCESS_TOKEN": False,  # nosec B105
                     "TEMPORAL_BATCH_ACTIONS_DISABLED": False,
                 },
                 "on-check-failure": {"up": "ignore"},
@@ -198,7 +198,7 @@ def test_auth(
                         "TEMPORAL_AUTH_ENABLED": True,
                         "TEMPORAL_AUTH_PROVIDER_URL": "some-provider-url",
                         "TEMPORAL_AUTH_CLIENT_ID": "some-client-id",
-                        "TEMPORAL_AUTH_CLIENT_SECRET": "some-client-secret",
+                        "TEMPORAL_AUTH_CLIENT_SECRET": "some-client-secret",  # nosec B105
                         "TEMPORAL_AUTH_SCOPES": "[openid,profile,email]",
                         "TEMPORAL_AUTH_CALLBACK_URL": f"https://{external_hostname}/auth/sso/callback",
                         "TEMPORAL_WORKFLOW_CANCEL_DISABLED": False,
@@ -207,7 +207,7 @@ def test_auth(
                         "TEMPORAL_WORKFLOW_TERMINATE_DISABLED": False,
                         "TEMPORAL_HIDE_WORKFLOW_QUERY_ERRORS": False,
                         "TEMPORAL_CODEC_ENDPOINT": "",
-                        "TEMPORAL_CODEC_PASS_ACCESS_TOKEN": False,
+                        "TEMPORAL_CODEC_PASS_ACCESS_TOKEN": False,  # nosec B105
                         "TEMPORAL_BATCH_ACTIONS_DISABLED": False,
                     },
                     "on-check-failure": {"up": "ignore"},
