@@ -14,7 +14,7 @@ jobs:
       channel: 1.33-classic/stable
       juju-channel: 3.6/stable
       charmcraft-channel: latest/candidate
-      modules: '["test_charm.py", "test_refresh.py"]'
+      modules: '["test_charm.py", "test_refresh.py", "test_traefik_ingress.py"]'
       pre-run-script: .github/scripts/init-pytest-ui.sh
       self-hosted-runner: true
       self-hosted-runner-label: large

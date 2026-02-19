@@ -121,3 +121,8 @@ def ui_relation():
 @pytest.fixture(scope="function")
 def nginx_relation():
     return ops.testing.Relation("nginx-route")
+
+
+@pytest.fixture(scope="function")
+def traefik_relation():
+    return ops.testing.Relation("ingress")

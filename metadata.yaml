@@ -42,6 +42,9 @@ requires:
   nginx-route:
     interface: nginx-route
     limit: 1
+  ingress:
+    interface: ingress
+    limit: 1
 
 containers:
   temporal-ui:
