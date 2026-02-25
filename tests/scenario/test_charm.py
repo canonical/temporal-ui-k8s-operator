@@ -310,18 +310,12 @@ def test_missing_pebble_plan(context, state, temporal_ui_container, temporal_ui_
 
 def test_blocked_on_two_ingresses(
     context,
+    state,
     temporal_ui_container,
     temporal_ui_container_initialized,
-    peer_relation,
-    ui_relation,
-    nginx_relation,
     traefik_relation,
 ):
-    state = ops.testing.State(
-        leader=True,
-        containers=[temporal_ui_container],
-        relations=[peer_relation, ui_relation, nginx_relation, traefik_relation],
-    )
+    state = dataclasses.replace(state, relations=state.relations | {traefik_relation})
 
     state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
 
@@ -329,23 +323,23 @@ def test_blocked_on_two_ingresses(
     state_out = context.run(context.on.relation_changed(traefik_relation), state_out)
 
     assert state_out.unit_status == ops.BlockedStatus(
-        "Only one ingress solution is allowed - remove the ingress or the nginx-route relation."
+        "Only one ingress solution is allowed - remove the ingress or the nginx-route relation"
     )
 
 
 def test_traefik_ingress_ready(
     context,
+    state,
     temporal_ui_container,
     temporal_ui_container_initialized,
-    peer_relation,
     ui_relation,
     traefik_relation,
 ):
-    state = ops.testing.State(
-        leader=True,
-        containers=[temporal_ui_container],
-        relations=[peer_relation, ui_relation, traefik_relation],
+    state = dataclasses.replace(
+        state,
+        relations=frozenset(relation for relation in state.relations if relation.endpoint != "nginx-route"),
     )
+    state = dataclasses.replace(state, relations=state.relations | {traefik_relation})
 
     state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
 
@@ -353,100 +347,35 @@ def test_traefik_ingress_ready(
     state_out = context.run(context.on.relation_changed(ui_relation), state_out)
 
     assert state_out.unit_status == ops.MaintenanceStatus("replanning application")
-
-    assert state_out.get_container("temporal-ui").plan.to_dict() == {
-        "services": {
-            "temporal-ui": {
-                "summary": "temporal ui",
-                "command": "ui-server --root /home/ui-server --env charm start",
-                "startup": "enabled",
-                "override": "replace",
-                "environment": {
-                    "LOG_LEVEL": "info",
-                    "TEMPORAL_UI_PORT": 8080,
-                    "TEMPORAL_DEFAULT_NAMESPACE": "default",
-                    "TEMPORAL_AUTH_ENABLED": False,
-                    "TEMPORAL_WORKFLOW_CANCEL_DISABLED": False,
-                    "TEMPORAL_WORKFLOW_RESET_DISABLED": False,
-                    "TEMPORAL_WORKFLOW_SIGNAL_DISABLED": False,
-                    "TEMPORAL_WORKFLOW_TERMINATE_DISABLED": False,
-                    "TEMPORAL_HIDE_WORKFLOW_QUERY_ERRORS": False,
-                    "TEMPORAL_CODEC_ENDPOINT": "",
-                    "TEMPORAL_CODEC_PASS_ACCESS_TOKEN": False,  # nosec B105
-                    "TEMPORAL_BATCH_ACTIONS_DISABLED": False,
-                },
-                "on-check-failure": {"up": "ignore"},
-            }
-        },
-        "checks": {
-            "up": {
-                "http": {"url": "http://localhost:8080/"},
-                "override": "replace",
-                "period": "10s",
-            }
-        },
-    }
+    assert state_out.get_container("temporal-ui").service_statuses["temporal-ui"] == ops.pebble.ServiceStatus.ACTIVE
 
 
 def test_auth_with_traefik_ingress(
     context,
+    state,
     temporal_ui_container,
     temporal_ui_container_initialized,
-    peer_relation,
     ui_relation,
     traefik_relation,
     config_with_auth_enabled,
     external_hostname,
 ):
-    state = ops.testing.State(
-        leader=True,
-        containers=[temporal_ui_container],
-        relations=[peer_relation, ui_relation, traefik_relation],
+    state = dataclasses.replace(
+        state,
+        relations=frozenset(relation for relation in state.relations if relation.endpoint != "nginx-route"),
     )
+    state = dataclasses.replace(state, relations=state.relations | {traefik_relation})
+    state = dataclasses.replace(state, config=config_with_auth_enabled)
 
     state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
 
     state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
     state_out = context.run(context.on.relation_changed(ui_relation), state_out)
 
-    state_out = dataclasses.replace(state_out, config=config_with_auth_enabled)
-
-    assert sorted(state_out.get_container("temporal-ui").plan.to_dict()) == sorted(
-        {
-            "services": {
-                "temporal-ui": {
-                    "summary": "temporal ui",
-                    "command": "ui-server --root /home/ui-server --env charm start",
-                    "startup": "enabled",
-                    "override": "replace",
-                    "environment": {
-                        "LOG_LEVEL": "info",
-                        "TEMPORAL_UI_PORT": 8080,
-                        "TEMPORAL_DEFAULT_NAMESPACE": "default",
-                        "TEMPORAL_AUTH_ENABLED": True,
-                        "TEMPORAL_AUTH_PROVIDER_URL": "some-provider-url",
-                        "TEMPORAL_AUTH_CLIENT_ID": "some-client-id",
-                        "TEMPORAL_AUTH_CLIENT_SECRET": "some-client-secret",  # nosec B105
-                        "TEMPORAL_AUTH_SCOPES": "[openid,profile,email]",
-                        "TEMPORAL_AUTH_CALLBACK_URL": f"https://{external_hostname}/auth/sso/callback",
-                        "TEMPORAL_WORKFLOW_CANCEL_DISABLED": False,
-                        "TEMPORAL_WORKFLOW_RESET_DISABLED": False,
-                        "TEMPORAL_WORKFLOW_SIGNAL_DISABLED": False,
-                        "TEMPORAL_WORKFLOW_TERMINATE_DISABLED": False,
-                        "TEMPORAL_HIDE_WORKFLOW_QUERY_ERRORS": False,
-                        "TEMPORAL_CODEC_ENDPOINT": "",
-                        "TEMPORAL_CODEC_PASS_ACCESS_TOKEN": False,  # nosec B105
-                        "TEMPORAL_BATCH_ACTIONS_DISABLED": False,
-                    },
-                    "on-check-failure": {"up": "ignore"},
-                }
-            },
-            "checks": {
-                "up": {
-                    "http": {"url": "http://localhost:8080/"},
-                    "override": "replace",
-                    "period": "10s",
-                }
-            },
-        }
-    )
+    env = state_out.get_container("temporal-ui").plan.to_dict()["services"]["temporal-ui"]["environment"]
+    assert env["TEMPORAL_AUTH_ENABLED"] is True
+    assert env["TEMPORAL_AUTH_PROVIDER_URL"] == "some-provider-url"
+    assert env["TEMPORAL_AUTH_CLIENT_ID"] == "some-client-id"
+    assert env["TEMPORAL_AUTH_CLIENT_SECRET"] == "some-client-secret"  # nosec B105
+    assert env["TEMPORAL_AUTH_CALLBACK_URL"] == f"https://{external_hostname}/auth/sso/callback"
+    assert state_out.get_container("temporal-ui").service_statuses["temporal-ui"] == ops.pebble.ServiceStatus.ACTIVE

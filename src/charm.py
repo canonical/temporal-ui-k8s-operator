@@ -96,7 +96,7 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         """Require nginx-route relation based on current configuration."""
         if self.model.get_relation("ingress") and self.model.get_relation("nginx-route"):
             self.unit.status = BlockedStatus(
-                "Only one ingress solution is allowed - remove the ingress or the nginx-route relation."
+                "Only one ingress solution is allowed - remove the ingress or the nginx-route relation"
             )
             return
         require_nginx_route(
