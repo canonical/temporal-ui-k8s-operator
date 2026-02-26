@@ -94,11 +94,6 @@ class TemporalUiK8SOperatorCharm(CharmBase):
 
     def _require_nginx_route(self):
         """Require nginx-route relation based on current configuration."""
-        if self.model.get_relation("ingress") and self.model.get_relation("nginx-route"):
-            self.unit.status = BlockedStatus(
-                "Only one ingress solution is allowed - remove the ingress or the nginx-route relation"
-            )
-            return
         require_nginx_route(
             charm=self,
             service_hostname=self.external_hostname,
@@ -289,6 +284,8 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             raise ValueError("ui:temporal relation: not available")
         if not self._state.server_status == "ready":
             raise ValueError("ui:temporal relation: server is not ready")
+        if self.model.relations.get("ingress") and self.model.relations.get("nginx-route"):
+            raise ValueError("Only one ingress solution is allowed - remove the ingress or the nginx-route relation")
 
         if self.config["auth-enabled"]:
             for param in REQUIRED_AUTH_PARAMETERS:
