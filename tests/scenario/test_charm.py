@@ -14,41 +14,6 @@ logger = logging.getLogger(__name__)
 UI_PORT = "8080"
 
 
-@pytest.fixture
-def all_required_relations(peer_relation, ui_relation, nginx_relation):
-    return [
-        peer_relation,
-        ui_relation,
-        nginx_relation,
-    ]
-
-
-@pytest.fixture
-def state(temporal_ui_container, all_required_relations):
-    return ops.testing.State(
-        leader=True,
-        containers=[temporal_ui_container],
-        relations=all_required_relations,
-    )
-
-
-@pytest.fixture
-def dual_ingress_state(state, traefik_relation):
-    return dataclasses.replace(state, relations=state.relations | {traefik_relation})
-
-
-@pytest.fixture
-def traefik_state(state, traefik_relation):
-    relations_without_nginx = frozenset(
-        relation for relation in state.relations if relation.endpoint != "nginx-route"
-    )
-    return dataclasses.replace(state, relations=relations_without_nginx | {traefik_relation})
-
-
-@pytest.fixture
-def traefik_auth_state(traefik_state, config_with_auth_enabled):
-    return dataclasses.replace(traefik_state, config=config_with_auth_enabled)
-
 
 def test_smoke(context, state):
     context.run(context.on.start(), state)
@@ -78,7 +43,7 @@ def test_blocked_by_peer_relation_not_ready(
 
 def test_ingress(
     context,
-    state,
+    nginx_state,
     temporal_ui_container,
     config,
     temporal_ui_container_initialized,
@@ -87,7 +52,7 @@ def test_ingress(
     external_hostname,
     tls_secret_name,
 ):
-    state = dataclasses.replace(state, config={})
+    state = dataclasses.replace(nginx_state, config={})
 
     state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
 
@@ -187,14 +152,14 @@ def test_ready(context, state, temporal_ui_container, temporal_ui_container_init
 
 def test_auth(
     context,
-    state,
+    nginx_state,
     temporal_ui_container,
     temporal_ui_container_initialized,
     ui_relation,
     config_with_auth_enabled,
     external_hostname,
 ):
-    state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
+    state_out = context.run(context.on.pebble_ready(temporal_ui_container), nginx_state)
 
     state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
     state_out = context.run(context.on.relation_changed(ui_relation), state_out)
@@ -328,12 +293,13 @@ def test_missing_pebble_plan(context, state, temporal_ui_container, temporal_ui_
 
 def test_blocked_on_two_ingresses(
     context,
-    dual_ingress_state,
+    nginx_state,
     temporal_ui_container,
     temporal_ui_container_initialized,
     traefik_relation,
 ):
-    state_out = context.run(context.on.pebble_ready(temporal_ui_container), dual_ingress_state)
+    state = dataclasses.replace(nginx_state, relations=nginx_state.relations | {traefik_relation})
+    state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
 
     state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
     state_out = context.run(context.on.relation_changed(traefik_relation), state_out)
@@ -361,13 +327,15 @@ def test_traefik_ingress_ready(
 
 def test_auth_with_traefik_ingress(
     context,
-    traefik_auth_state,
+    traefik_state,
     temporal_ui_container,
     temporal_ui_container_initialized,
     ui_relation,
+    config_with_auth_enabled,
     external_hostname,
 ):
-    state_out = context.run(context.on.pebble_ready(temporal_ui_container), traefik_auth_state)
+    state = dataclasses.replace(traefik_state, config=config_with_auth_enabled)
+    state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
 
     state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
     state_out = context.run(context.on.relation_changed(ui_relation), state_out)
