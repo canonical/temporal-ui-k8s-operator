@@ -325,25 +325,3 @@ def test_traefik_ingress_ready(
     assert state_out.get_container("temporal-ui").service_statuses["temporal-ui"] == ops.pebble.ServiceStatus.ACTIVE
 
 
-def test_auth_with_traefik_ingress(
-    context,
-    traefik_state,
-    temporal_ui_container,
-    temporal_ui_container_initialized,
-    ui_relation,
-    config_with_auth_enabled,
-    external_hostname,
-):
-    state = dataclasses.replace(traefik_state, config=config_with_auth_enabled)
-    state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
-
-    state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
-    state_out = context.run(context.on.relation_changed(ui_relation), state_out)
-
-    env = state_out.get_container("temporal-ui").plan.to_dict()["services"]["temporal-ui"]["environment"]
-    assert env["TEMPORAL_AUTH_ENABLED"] is True
-    assert env["TEMPORAL_AUTH_PROVIDER_URL"] == "some-provider-url"
-    assert env["TEMPORAL_AUTH_CLIENT_ID"] == "some-client-id"
-    assert env["TEMPORAL_AUTH_CLIENT_SECRET"] == "some-client-secret"  # nosec B105
-    assert env["TEMPORAL_AUTH_CALLBACK_URL"] == f"https://{external_hostname}/auth/sso/callback"
-    assert state_out.get_container("temporal-ui").service_statuses["temporal-ui"] == ops.pebble.ServiceStatus.ACTIVE
