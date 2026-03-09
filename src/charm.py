@@ -10,6 +10,7 @@ import logging
 import os
 
 from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
+from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
 from jinja2 import Environment, FileSystemLoader
 from ops import main, pebble
 from ops.charm import CharmBase
@@ -78,8 +79,18 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         self.framework.observe(self.on.restart_action, self._on_restart)
         self.framework.observe(self.on.update_status, self._on_update_status)
 
-        # Handle Ingress.
+        # Handle Nginx Ingress.
         self._require_nginx_route()
+
+        # Handle Traefik Ingress.
+        self.ingress = IngressPerAppRequirer(
+            self,
+            relation_name="ingress",
+            port=self.config["port"],
+            strip_prefix=True,
+        )
+        self.framework.observe(self.ingress.on.ready, self._on_ingress_ready)
+        self.framework.observe(self.ingress.on.revoked, self._on_ingress_revoked)
 
     def _require_nginx_route(self):
         """Require nginx-route relation based on current configuration."""
@@ -91,6 +102,26 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             tls_secret_name=self.config["tls-secret-name"],
             backend_protocol="HTTP",
         )
+
+    @log_event_handler(logger)
+    def _on_ingress_ready(self, event):
+        """Handle Traefik ingress ready event.
+
+        Args:
+            event: The event triggered when ingress is ready.
+        """
+        logger.info("Ingress is ready: %s", self.ingress.url)
+        self._update(event)
+
+    @log_event_handler(logger)
+    def _on_ingress_revoked(self, event):
+        """Handle Traefik ingress revoked event.
+
+        Args:
+            event: The event triggered when ingress is revoked.
+        """
+        logger.info("Ingress revoked")
+        self._update(event)
 
     @log_event_handler(logger)
     def _on_install(self, event):
@@ -253,13 +284,15 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             raise ValueError("ui:temporal relation: not available")
         if not self._state.server_status == "ready":
             raise ValueError("ui:temporal relation: server is not ready")
+        if self.model.relations.get("ingress") and self.model.relations.get("nginx-route"):
+            raise ValueError("Only one ingress solution is allowed - remove the ingress or the nginx-route relation")
 
         if self.config["auth-enabled"]:
             for param in REQUIRED_AUTH_PARAMETERS:
                 if self.config[param].strip() == "":
                     raise ValueError(f"Invalid config: {param} value missing")
 
-            if not self.model.relations.get("nginx-route"):
+            if not self.model.relations.get("nginx-route") and not self.model.relations.get("ingress"):
                 raise ValueError("Invalid config: auth cannot work without ingress relation")
 
     @log_event_handler(logger)

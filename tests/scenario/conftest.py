@@ -1,6 +1,7 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+import dataclasses
 import json
 
 import ops.testing
@@ -121,3 +122,32 @@ def ui_relation():
 @pytest.fixture(scope="function")
 def nginx_relation():
     return ops.testing.Relation("nginx-route")
+
+
+@pytest.fixture(scope="function")
+def traefik_relation():
+    return ops.testing.Relation("ingress")
+
+
+@pytest.fixture
+def all_required_relations(peer_relation, ui_relation):
+    return [peer_relation, ui_relation]
+
+
+@pytest.fixture
+def state(temporal_ui_container, all_required_relations):
+    return ops.testing.State(
+        leader=True,
+        containers=[temporal_ui_container],
+        relations=all_required_relations,
+    )
+
+
+@pytest.fixture
+def nginx_state(state, nginx_relation):
+    return dataclasses.replace(state, relations=state.relations | {nginx_relation})
+
+
+@pytest.fixture
+def traefik_state(state, traefik_relation):
+    return dataclasses.replace(state, relations=state.relations | {traefik_relation})
