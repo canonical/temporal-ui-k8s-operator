@@ -44,6 +44,7 @@ requires:
     limit: 1
   ingress:
     interface: ingress
+    limit: 1
   temporal-host-info:
     interface: temporal-host-info
     limit: 1

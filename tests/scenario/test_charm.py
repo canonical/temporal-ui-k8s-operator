@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 UI_PORT = "8080"
 
 
-
 def test_smoke(context, state):
     context.run(context.on.start(), state)
 
@@ -323,5 +322,3 @@ def test_traefik_ingress_ready(
 
     assert state_out.unit_status == ops.MaintenanceStatus("replanning application")
     assert state_out.get_container("temporal-ui").service_statuses["temporal-ui"] == ops.pebble.ServiceStatus.ACTIVE
-
-
