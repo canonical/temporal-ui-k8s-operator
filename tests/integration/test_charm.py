@@ -191,3 +191,23 @@ class TestDeployment:
         result = await unit.run("cat /home/ui-server/config/charm.yaml")
         charm_config = yaml.safe_load(result.stdout)
         assert charm_config["temporalGrpcAddress"] == f"{server_address}:7233"
+
+    async def test_host_info_relation_removed_falls_back_to_default(self, ops_test: OpsTest):
+        """Test that removing host-info relation falls back to default server address."""
+        await ops_test.juju(
+            "remove-relation",
+            f"{APP_NAME}:temporal-host-info",
+            f"{APP_NAME_SERVER}:temporal-host-info",
+        )
+        async with ops_test.fast_forward():
+            await ops_test.model.wait_for_idle(
+                apps=[APP_NAME, APP_NAME_SERVER],
+                status="active",
+                raise_on_blocked=False,
+                timeout=600,
+            )
+
+        unit = ops_test.model.applications[APP_NAME].units[0]
+        result = await unit.run("cat /home/ui-server/config/charm.yaml")
+        charm_config = yaml.safe_load(result.stdout)
+        assert charm_config["temporalGrpcAddress"] == "temporal-k8s:7233"
