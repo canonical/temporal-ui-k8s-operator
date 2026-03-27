@@ -123,6 +123,7 @@ def test_ready(context, state, temporal_ui_container, temporal_ui_container_init
                 "environment": {
                     "LOG_LEVEL": "info",
                     "TEMPORAL_UI_PORT": 8080,
+                    "TEMPORAL_ADDRESS": "10.0.0.1:7233",
                     "TEMPORAL_DEFAULT_NAMESPACE": "default",
                     "TEMPORAL_AUTH_ENABLED": False,
                     "TEMPORAL_WORKFLOW_CANCEL_DISABLED": False,
@@ -176,6 +177,7 @@ def test_auth(
                     "environment": {
                         "LOG_LEVEL": "info",
                         "TEMPORAL_UI_PORT": 8080,
+                        "TEMPORAL_ADDRESS": "10.0.0.1:7233",
                         "TEMPORAL_DEFAULT_NAMESPACE": "default",
                         "TEMPORAL_AUTH_ENABLED": True,
                         "TEMPORAL_AUTH_PROVIDER_URL": "some-provider-url",

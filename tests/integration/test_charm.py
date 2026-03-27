@@ -85,6 +85,7 @@ async def deploy(ops_test: OpsTest):
         )
 
         await ops_test.model.integrate(f"{APP_NAME}:ui", f"{APP_NAME_SERVER}:ui")
+        await ops_test.model.integrate(f"{APP_NAME}:temporal-host-info", f"{APP_NAME_SERVER}:temporal-host-info")
 
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
@@ -174,7 +175,8 @@ class TestDeployment:
         await scale(ops_test, app=APP_NAME, units=2)
 
     async def test_host_info_relation(self, ops_test: OpsTest):
-        """Test that host-info relation provides correct info."""
+        """Test that host-info relation takes precedence over deprecated fallback config."""
+        await ops_test.model.applications[APP_NAME].set_config({"server-name": "deprecated-host"})
         status = await ops_test.model.get_status()  # noqa: F821
         await ops_test.model.integrate(f"{APP_NAME}:temporal-host-info", f"{APP_NAME_SERVER}:temporal-host-info")
         async with ops_test.fast_forward():
@@ -192,8 +194,9 @@ class TestDeployment:
         charm_config = yaml.safe_load(result.stdout)
         assert charm_config["temporalGrpcAddress"] == f"{server_address}:7233"
 
-    async def test_host_info_relation_removed_falls_back_to_default(self, ops_test: OpsTest):
-        """Test that removing host-info relation falls back to default server address."""
+    async def test_host_info_relation_removed_falls_back_to_config(self, ops_test: OpsTest):
+        """Test that removing host-info relation falls back to deprecated config value."""
+        await ops_test.model.applications[APP_NAME].set_config({"server-name": "fallback-host"})
         await ops_test.juju(
             "remove-relation",
             f"{APP_NAME}:temporal-host-info",
@@ -210,4 +213,4 @@ class TestDeployment:
         unit = ops_test.model.applications[APP_NAME].units[0]
         result = await unit.run("cat /home/ui-server/config/charm.yaml")
         charm_config = yaml.safe_load(result.stdout)
-        assert charm_config["temporalGrpcAddress"] == "temporal-k8s:7233"
+        assert charm_config["temporalGrpcAddress"] == "fallback-host:7233"

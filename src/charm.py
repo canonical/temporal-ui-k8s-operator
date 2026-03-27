@@ -56,6 +56,15 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         """Return the DNS listing used for external connections."""
         return self.config["external-hostname"] or self.app.name
 
+    @property
+    def _deprecated_server_name(self) -> str | None:
+        """Return configured fallback Temporal server hostname, if set."""
+        raw = self.config.get("server-name")
+        if raw is None:
+            return None
+        stripped = str(raw).strip()
+        return stripped or None
+
     def __init__(self, *args):
         """Construct.
 
@@ -95,6 +104,7 @@ class TemporalUiK8SOperatorCharm(CharmBase):
 
         self.host_info = TemporalHostInfoRequirer(self)
         self.framework.observe(self.host_info.on.temporal_host_info_changed, self._update)
+        self.framework.observe(self.host_info.on.temporal_host_info_unavailable, self._update)
 
     def _require_nginx_route(self):
         """Require nginx-route relation based on current configuration."""
@@ -359,8 +369,23 @@ class TemporalUiK8SOperatorCharm(CharmBase):
                 }
             )
 
+        # Relation data is authoritative when available. For upgrade compatibility,
+        # fallback to the deprecated `server-name` config until it is removed.
         if self.host_info.host and self.host_info.port:
             context["TEMPORAL_ADDRESS"] = f"{self.host_info.host}:{self.host_info.port}"
+        else:
+            deprecated = self._deprecated_server_name
+            if deprecated:
+                logger.warning(
+                    "Config option `server-name` is deprecated and will be removed in a future release; "
+                    "prefer the `temporal-host-info` relation."
+                )
+                context["TEMPORAL_ADDRESS"] = f"{deprecated}:7233"
+            else:
+                self.unit.status = BlockedStatus(
+                    "temporal-host-info relation not established; set deprecated server-name config as fallback"
+                )
+                return
 
         config = render("config.jinja", context)
         container.push("/home/ui-server/config/charm.yaml", config, make_dirs=True)
