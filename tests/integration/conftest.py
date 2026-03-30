@@ -97,7 +97,14 @@ def deploy_temporal_stack(
     juju.integrate("temporal-k8s:admin", "temporal-admin-k8s:admin")
 
     juju.integrate("temporal-k8s:ui", "temporal-ui-k8s:ui")
-    juju.integrate("temporal-k8s:temporal-host-info", "temporal-ui-k8s:temporal-host-info")
+    try:
+        juju.integrate("temporal-k8s:temporal-host-info", "temporal-ui-k8s:temporal-host-info")
+    except jubilant.CLIError as exc:
+        msg = str(exc).lower()
+        if "temporal-host-info" in msg and "has no" in msg:
+            juju.config("temporal-ui-k8s", {"server-name": "temporal-k8s"})
+        else:
+            raise
 
     juju.wait(jubilant.all_active)
 

@@ -14,6 +14,7 @@ import pytest_asyncio
 import requests
 import yaml
 from conftest import POSTGRESQL_K8S_CHANNEL, TEMPORAL_CHANNEL
+from helpers import integrate_temporal_host_info_or_set_server_name
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,9 @@ async def deploy(ops_test: OpsTest):
         await ops_test.model.integrate(f"{TEMPORAL_SERVER}:visibility", f"{POSTGRESQL_K8S}:database")
         await ops_test.model.integrate(f"{TEMPORAL_SERVER}:admin", f"{TEMPORAL_ADMIN}:admin")
         await ops_test.model.integrate(f"{APP_NAME}:ui", f"{TEMPORAL_SERVER}:ui")
-        await ops_test.model.integrate(f"{APP_NAME}:temporal-host-info", f"{TEMPORAL_SERVER}:temporal-host-info")
+        await integrate_temporal_host_info_or_set_server_name(
+            ops_test, ui_app=APP_NAME, temporal_server_app=TEMPORAL_SERVER
+        )
         await ops_test.model.integrate(f"{APP_NAME}:ingress", f"{TRAEFIK_K8S}:ingress")
 
         await ops_test.model.wait_for_idle(

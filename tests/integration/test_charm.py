@@ -15,7 +15,7 @@ import pytest_asyncio
 import requests
 import yaml
 from conftest import POSTGRESQL_K8S_CHANNEL, TEMPORAL_CHANNEL
-from helpers import gen_patch_getaddrinfo, scale
+from helpers import gen_patch_getaddrinfo, integrate_temporal_host_info_or_set_server_name, scale
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
@@ -28,10 +28,14 @@ APP_NAME_ADMIN = "temporal-admin-k8s"
 
 NGINX_INGRESS_INTEGRATOR_CHANNEL = "latest/edge"
 
+_TEMPORAL_SERVER_SUPPORTS_HOST_INFO: bool | None = None
+
 
 @pytest_asyncio.fixture(name="deploy", scope="module")
 async def deploy(ops_test: OpsTest):
     """The app is up and running."""
+    global _TEMPORAL_SERVER_SUPPORTS_HOST_INFO
+
     # Deploy temporal server, temporal admin and postgresql charms.
     await asyncio.gather(
         ops_test.model.deploy(APP_NAME_SERVER, channel=TEMPORAL_CHANNEL, config={"num-history-shards": 1}),
@@ -85,7 +89,9 @@ async def deploy(ops_test: OpsTest):
         )
 
         await ops_test.model.integrate(f"{APP_NAME}:ui", f"{APP_NAME_SERVER}:ui")
-        await ops_test.model.integrate(f"{APP_NAME}:temporal-host-info", f"{APP_NAME_SERVER}:temporal-host-info")
+        _TEMPORAL_SERVER_SUPPORTS_HOST_INFO = await integrate_temporal_host_info_or_set_server_name(
+            ops_test, ui_app=APP_NAME, temporal_server_app=APP_NAME_SERVER
+        )
 
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
@@ -176,6 +182,8 @@ class TestDeployment:
 
     async def test_host_info_relation(self, ops_test: OpsTest):
         """Test that host-info relation takes precedence over deprecated fallback config."""
+        if _TEMPORAL_SERVER_SUPPORTS_HOST_INFO is not True:
+            pytest.skip("temporal-k8s on this channel has no temporal-host-info relation")
         await ops_test.model.applications[APP_NAME].set_config({"server-name": "deprecated-host"})
         status = await ops_test.model.get_status()  # noqa: F821
         await ops_test.model.integrate(f"{APP_NAME}:temporal-host-info", f"{APP_NAME_SERVER}:temporal-host-info")
@@ -196,6 +204,8 @@ class TestDeployment:
 
     async def test_host_info_relation_removed_falls_back_to_config(self, ops_test: OpsTest):
         """Test that removing host-info relation falls back to deprecated config value."""
+        if _TEMPORAL_SERVER_SUPPORTS_HOST_INFO is not True:
+            pytest.skip("temporal-k8s on this channel has no temporal-host-info relation")
         await ops_test.model.applications[APP_NAME].set_config({"server-name": "fallback-host"})
         await ops_test.juju(
             "remove-relation",
