@@ -33,7 +33,7 @@ NGINX_INGRESS_INTEGRATOR_CHANNEL = "latest/edge"
 async def deploy(ops_test: OpsTest):
     """The app is up and running."""
     # Deploy temporal server, temporal admin and postgresql charms.
-    asyncio.gather(
+    await asyncio.gather(
         ops_test.model.deploy(APP_NAME_SERVER, channel=TEMPORAL_CHANNEL, config={"num-history-shards": 1}),
         ops_test.model.deploy(APP_NAME_ADMIN, channel=TEMPORAL_CHANNEL),
         ops_test.model.deploy("postgresql-k8s", channel=POSTGRESQL_K8S_CHANNEL, trust=True),

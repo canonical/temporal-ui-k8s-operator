@@ -34,7 +34,7 @@ TRAEFIK_K8S_TRUST = True
 async def deploy(ops_test: OpsTest):
     """The app is up and running."""
     # Deploy temporal server, temporal admin, traefik-k8s, and postgresql charms.
-    asyncio.gather(
+    await asyncio.gather(
         ops_test.model.deploy(TEMPORAL_SERVER, channel=TEMPORAL_CHANNEL, config={"num-history-shards": 1}),
         ops_test.model.deploy(TEMPORAL_ADMIN, channel=TEMPORAL_CHANNEL),
         ops_test.model.deploy(POSTGRESQL_K8S, channel=POSTGRESQL_K8S_CHANNEL, trust=POSTGRESQL_K8S_TRUST),
@@ -52,6 +52,7 @@ async def deploy(ops_test: OpsTest):
         await ops_test.model.integrate(f"{TEMPORAL_SERVER}:visibility", f"{POSTGRESQL_K8S}:database")
         await ops_test.model.integrate(f"{TEMPORAL_SERVER}:admin", f"{TEMPORAL_ADMIN}:admin")
         await ops_test.model.integrate(f"{APP_NAME}:ui", f"{TEMPORAL_SERVER}:ui")
+        await ops_test.model.integrate(f"{APP_NAME}:temporal-host-info", f"{TEMPORAL_SERVER}:temporal-host-info")
         await ops_test.model.integrate(f"{APP_NAME}:ingress", f"{TRAEFIK_K8S}:ingress")
 
         await ops_test.model.wait_for_idle(
