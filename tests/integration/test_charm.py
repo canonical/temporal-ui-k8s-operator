@@ -15,7 +15,11 @@ import pytest_asyncio
 import requests
 import yaml
 from conftest import POSTGRESQL_K8S_CHANNEL, TEMPORAL_CHANNEL
-from helpers import gen_patch_getaddrinfo, integrate_temporal_host_info_or_set_server_name, scale
+from helpers import (
+    gen_patch_getaddrinfo,
+    integrate_temporal_host_info_or_set_server_name,
+    scale,
+)
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)

@@ -45,6 +45,10 @@ def deploy_temporal_stack(
         temporal_server_channel: channel for temporal-k8s
         temporal_admin_channel: channel for temporal-admin-k8s
         temporal_ui_channel: channel for temporal-ui-k8s
+
+    Raises:
+        CLIError: Raised when `juju.integrate` returns a CLI error other than a
+            missing `temporal-host-info` endpoint.
     """
     juju.model_config(
         values={
@@ -104,7 +108,7 @@ def deploy_temporal_stack(
         if "temporal-host-info" in msg and "has no" in msg:
             juju.config("temporal-ui-k8s", {"server-name": "temporal-k8s"})
         else:
-            raise
+            raise jubilant.CLIError(str(exc)) from exc
 
     juju.wait(jubilant.all_active)
 
