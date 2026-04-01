@@ -12,6 +12,11 @@ import yaml
 POSTGRESQL_K8S_CHANNEL = "14/stable"
 TEMPORAL_CHANNEL = "1.23/edge"
 
+# CI bundle only: Juju application name for Temporal server. Matches historical in-cluster
+# gRPC target ``temporal-k8s:7233`` when published UI revisions lack ``temporal-host-info`` and
+# ``server-name`` (Juju cannot set unknown config keys).
+TEMPORAL_SERVER_JUJU_APP = "temporal-k8s"
+
 METADATA = yaml.safe_load(pathlib.Path("./metadata.yaml").read_text())
 TEMPORAL_UI_IMAGE = METADATA["resources"]["temporal-ui-image"]["upstream-source"]
 
@@ -65,8 +70,8 @@ def deploy_temporal_stack(
     )
 
     juju.deploy(
-        charm="temporal-k8s",
-        app="temporal-k8s",
+        charm=TEMPORAL_SERVER_JUJU_APP,
+        app=TEMPORAL_SERVER_JUJU_APP,
         channel=temporal_server_channel,
         config={
             "num-history-shards": 1,
@@ -91,24 +96,40 @@ def deploy_temporal_stack(
     juju.wait(
         lambda status: (
             jubilant.all_active(status, "postgresql-k8s")
-            and jubilant.all_blocked(status, "temporal-k8s", "temporal-admin-k8s", "temporal-ui-k8s")
+            and jubilant.all_blocked(
+                status, TEMPORAL_SERVER_JUJU_APP, "temporal-admin-k8s", "temporal-ui-k8s"
+            )
         ),
     )
 
-    juju.integrate("temporal-k8s:db", "postgresql-k8s:database")
-    juju.integrate("temporal-k8s:visibility", "postgresql-k8s:database")
+    juju.integrate(f"{TEMPORAL_SERVER_JUJU_APP}:db", "postgresql-k8s:database")
+    juju.integrate(f"{TEMPORAL_SERVER_JUJU_APP}:visibility", "postgresql-k8s:database")
 
-    juju.integrate("temporal-k8s:admin", "temporal-admin-k8s:admin")
+    juju.integrate(f"{TEMPORAL_SERVER_JUJU_APP}:admin", "temporal-admin-k8s:admin")
 
-    juju.integrate("temporal-k8s:ui", "temporal-ui-k8s:ui")
+    juju.integrate(f"{TEMPORAL_SERVER_JUJU_APP}:ui", "temporal-ui-k8s:ui")
     try:
-        juju.integrate("temporal-k8s:temporal-host-info", "temporal-ui-k8s:temporal-host-info")
+        juju.integrate(
+            f"{TEMPORAL_SERVER_JUJU_APP}:temporal-host-info",
+            "temporal-ui-k8s:temporal-host-info",
+        )
     except jubilant.CLIError as exc:
         msg = str(exc).lower()
-        if "temporal-host-info" in msg and "has no" in msg:
-            juju.config("temporal-ui-k8s", {"server-name": "temporal-k8s"})
+        if "temporal-host-info" in msg and (
+            "has no" in msg or "not found" in msg or "no relations found" in msg
+        ):
+            try:
+                juju.config("temporal-ui-k8s", {"server-name": TEMPORAL_SERVER_JUJU_APP})
+            except jubilant.CLIError as cfg_exc:
+                cfg_msg = str(cfg_exc).lower()
+                if "unknown option" in cfg_msg and "server-name" in cfg_msg:
+                    # No host-info, no server-name key on this revision: rely on CI app name
+                    # TEMPORAL_SERVER_JUJU_APP (legacy implicit gRPC host for older published UI).
+                    pass
+                else:
+                    raise
         else:
-            raise jubilant.CLIError(str(exc)) from exc
+            raise
 
     juju.wait(jubilant.all_active)
 
