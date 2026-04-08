@@ -28,6 +28,17 @@ def test_blocked_by_temporal_server(context, state, temporal_ui_container, all_r
     assert state_out.unit_status == ops.BlockedStatus("ui:temporal relation: not available")
 
 
+def test_blocked_when_host_info_absent(
+    context, state, temporal_ui_container, all_required_relations, host_info_relation
+):
+    all_required_relations.remove(host_info_relation)
+    state = dataclasses.replace(state, relations=all_required_relations)
+
+    state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
+
+    assert state_out.unit_status == ops.BlockedStatus("temporal-host-info relation not established")
+
+
 def test_blocked_by_peer_relation_not_ready(
     context, state, temporal_ui_container, all_required_relations, peer_relation
 ):

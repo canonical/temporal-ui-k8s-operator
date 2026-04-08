@@ -8,46 +8,9 @@
 import logging
 import socket
 
-import juju.errors
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
-
-
-def _temporal_host_info_endpoint_missing(exc: BaseException) -> bool:
-    msg = str(exc).lower()
-    return "temporal-host-info" in msg and "has no" in msg
-
-
-async def integrate_temporal_host_info_or_set_server_name(
-    ops_test: OpsTest,
-    *,
-    ui_app: str,
-    temporal_server_app: str,
-) -> bool:
-    """Integrate temporal-host-info if temporal-k8s exposes it; else set deprecated server-name.
-
-    Published ``temporal-k8s`` revisions may not include the endpoint yet; tests still need UI active.
-
-    Returns:
-        True if the relation was integrated, False if server-name fallback was used.
-    """
-    try:
-        await ops_test.model.integrate(
-            f"{ui_app}:temporal-host-info",
-            f"{temporal_server_app}:temporal-host-info",
-        )
-    except juju.errors.JujuAPIError as exc:
-        if not _temporal_host_info_endpoint_missing(exc):
-            raise
-        logger.warning(
-            "%s has no temporal-host-info; setting UI server-name=%s",
-            temporal_server_app,
-            temporal_server_app,
-        )
-        await ops_test.model.applications[ui_app].set_config({"server-name": temporal_server_app})
-        return False
-    return True
 
 
 def gen_patch_getaddrinfo(host: str, resolve_to: str):  # noqa

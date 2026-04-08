@@ -15,11 +15,7 @@ import pytest_asyncio
 import requests
 import yaml
 from conftest import POSTGRESQL_K8S_CHANNEL, TEMPORAL_CHANNEL
-from helpers import (
-    gen_patch_getaddrinfo,
-    integrate_temporal_host_info_or_set_server_name,
-    scale,
-)
+from helpers import gen_patch_getaddrinfo, scale
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
@@ -32,14 +28,10 @@ APP_NAME_ADMIN = "temporal-admin-k8s"
 
 NGINX_INGRESS_INTEGRATOR_CHANNEL = "latest/edge"
 
-_TEMPORAL_SERVER_SUPPORTS_HOST_INFO: bool | None = None
-
 
 @pytest_asyncio.fixture(name="deploy", scope="module")
 async def deploy(ops_test: OpsTest):
     """The app is up and running."""
-    global _TEMPORAL_SERVER_SUPPORTS_HOST_INFO
-
     # Deploy temporal server, temporal admin and postgresql charms.
     await asyncio.gather(
         ops_test.model.deploy(APP_NAME_SERVER, channel=TEMPORAL_CHANNEL, config={"num-history-shards": 1}),
@@ -93,9 +85,7 @@ async def deploy(ops_test: OpsTest):
         )
 
         await ops_test.model.integrate(f"{APP_NAME}:ui", f"{APP_NAME_SERVER}:ui")
-        _TEMPORAL_SERVER_SUPPORTS_HOST_INFO = await integrate_temporal_host_info_or_set_server_name(
-            ops_test, ui_app=APP_NAME, temporal_server_app=APP_NAME_SERVER
-        )
+        await ops_test.model.integrate(f"{APP_NAME}:temporal-host-info", f"{APP_NAME_SERVER}:temporal-host-info")
 
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
@@ -185,20 +175,8 @@ class TestDeployment:
         await scale(ops_test, app=APP_NAME, units=2)
 
     async def test_host_info_relation(self, ops_test: OpsTest):
-        """Test that host-info relation takes precedence over deprecated fallback config."""
-        if _TEMPORAL_SERVER_SUPPORTS_HOST_INFO is not True:
-            pytest.skip("temporal-k8s on this channel has no temporal-host-info relation")
-        await ops_test.model.applications[APP_NAME].set_config({"server-name": "deprecated-host"})
+        """Test that the server address from the host-info relation is used in charm config."""
         status = await ops_test.model.get_status()  # noqa: F821
-        await ops_test.model.integrate(f"{APP_NAME}:temporal-host-info", f"{APP_NAME_SERVER}:temporal-host-info")
-        async with ops_test.fast_forward():
-            await ops_test.model.wait_for_idle(
-                apps=[APP_NAME, APP_NAME_SERVER],
-                status="active",
-                raise_on_blocked=False,
-                timeout=600,
-            )
-
         server_address = status["applications"][APP_NAME_SERVER]["units"][f"{APP_NAME_SERVER}/0"]["address"]
 
         unit = ops_test.model.applications[APP_NAME].units[0]
@@ -206,11 +184,8 @@ class TestDeployment:
         charm_config = yaml.safe_load(result.stdout)
         assert charm_config["temporalGrpcAddress"] == f"{server_address}:7233"
 
-    async def test_host_info_relation_removed_falls_back_to_config(self, ops_test: OpsTest):
-        """Test that removing host-info relation falls back to deprecated config value."""
-        if _TEMPORAL_SERVER_SUPPORTS_HOST_INFO is not True:
-            pytest.skip("temporal-k8s on this channel has no temporal-host-info relation")
-        await ops_test.model.applications[APP_NAME].set_config({"server-name": "fallback-host"})
+    async def test_host_info_relation_removed_causes_blocked(self, ops_test: OpsTest):
+        """Test that removing the host-info relation causes the charm to go blocked."""
         await ops_test.juju(
             "remove-relation",
             f"{APP_NAME}:temporal-host-info",
@@ -218,13 +193,20 @@ class TestDeployment:
         )
         async with ops_test.fast_forward():
             await ops_test.model.wait_for_idle(
-                apps=[APP_NAME, APP_NAME_SERVER],
-                status="active",
+                apps=[APP_NAME],
+                status="blocked",
                 raise_on_blocked=False,
-                timeout=600,
+                timeout=300,
             )
 
-        unit = ops_test.model.applications[APP_NAME].units[0]
-        result = await unit.run("cat /home/ui-server/config/charm.yaml")
-        charm_config = yaml.safe_load(result.stdout)
-        assert charm_config["temporalGrpcAddress"] == "fallback-host:7233"
+        assert ops_test.model.applications[APP_NAME].units[0].workload_status == "blocked"
+
+        # Re-integrate so subsequent tests still have an active charm.
+        await ops_test.model.integrate(f"{APP_NAME}:temporal-host-info", f"{APP_NAME_SERVER}:temporal-host-info")
+        async with ops_test.fast_forward():
+            await ops_test.model.wait_for_idle(
+                apps=[APP_NAME],
+                status="active",
+                raise_on_blocked=False,
+                timeout=300,
+            )
