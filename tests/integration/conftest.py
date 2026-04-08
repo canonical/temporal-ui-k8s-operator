@@ -104,7 +104,7 @@ def deploy_temporal_stack(
     juju.integrate(f"{TEMPORAL_SERVER_JUJU_APP}:ui", "temporal-ui-k8s:ui")
     if temporal_ui_channel.startswith("latest/"):
         # Upgrade/refresh tests deploy the old published UI from latest/edge first.
-        # That revision pre-dates temporal-host-info, so silently skip if the server
+        # That revision pre-dates temporal-host-info, so skip if the server
         # doesn't expose the endpoint yet.
         try:
             juju.integrate(

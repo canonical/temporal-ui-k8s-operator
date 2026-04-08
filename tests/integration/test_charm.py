@@ -180,8 +180,11 @@ class TestDeployment:
         server_address = status["applications"][APP_NAME_SERVER]["units"][f"{APP_NAME_SERVER}/0"]["address"]
 
         unit = ops_test.model.applications[APP_NAME].units[0]
-        result = await unit.run("cat /home/ui-server/config/charm.yaml")
-        charm_config = yaml.safe_load(result.stdout)
+        action = await unit.run("cat /home/ui-server/config/charm.yaml")
+        await action.wait()
+        stdout = action.results.get("stdout") or action.results.get("Stdout")
+        assert stdout is not None, action.results
+        charm_config = yaml.safe_load(stdout)
         assert charm_config["temporalGrpcAddress"] == f"{server_address}:7233"
 
     async def test_host_info_relation_removed_causes_blocked(self, ops_test: OpsTest):
