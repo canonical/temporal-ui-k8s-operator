@@ -37,6 +37,7 @@ def deploy_temporal_stack(
     temporal_server_channel: str = TEMPORAL_CHANNEL,
     temporal_admin_channel: str = TEMPORAL_CHANNEL,
     temporal_ui_channel: str = TEMPORAL_CHANNEL,
+    integrate_host_info: bool = True,
 ):
     """Helper function to deploy the temporal stack.
 
@@ -46,10 +47,9 @@ def deploy_temporal_stack(
         temporal_server_channel: channel for temporal-k8s
         temporal_admin_channel: channel for temporal-admin-k8s
         temporal_ui_channel: channel for temporal-ui-k8s
-
-    Raises:
-        CLIError: Raised when `juju.integrate` returns a CLI error other than a
-            missing ``temporal-host-info`` endpoint on the server side.
+        integrate_host_info: whether to integrate the temporal-host-info relation.
+            Set to False when deploying temporal-ui-k8s from latest/edge (pre-dates
+            the relation); the test is responsible for integrating after refresh.
     """
     juju.model_config(
         values={
@@ -102,23 +102,7 @@ def deploy_temporal_stack(
     juju.integrate(f"{TEMPORAL_SERVER_JUJU_APP}:admin", "temporal-admin-k8s:admin")
 
     juju.integrate(f"{TEMPORAL_SERVER_JUJU_APP}:ui", "temporal-ui-k8s:ui")
-    if temporal_ui_channel.startswith("latest/"):
-        # Upgrade/refresh tests deploy the old published UI from latest/edge first.
-        # That revision pre-dates temporal-host-info, so skip if the server
-        # doesn't expose the endpoint yet.
-        try:
-            juju.integrate(
-                f"{TEMPORAL_SERVER_JUJU_APP}:temporal-host-info",
-                "temporal-ui-k8s:temporal-host-info",
-            )
-        except jubilant.CLIError as exc:
-            msg = str(exc).lower()
-            if "temporal-host-info" in msg and ("has no" in msg or "not found" in msg or "no relations found" in msg):
-                pass
-            else:
-                raise
-    else:
-        # All 1.23/edge+ revisions expose temporal-host-info; require it unconditionally.
+    if integrate_host_info:
         juju.integrate(
             f"{TEMPORAL_SERVER_JUJU_APP}:temporal-host-info",
             "temporal-ui-k8s:temporal-host-info",
@@ -129,8 +113,12 @@ def deploy_temporal_stack(
 
 @pytest.fixture(scope="module")
 def ui_latest_track(juju: jubilant.Juju):
-    """Deploy the temporal stack with temporal-ui from the latest/edge track."""
-    deploy_temporal_stack(juju, temporal_ui_channel="latest/edge")
+    """Deploy the temporal stack with temporal-ui from the latest/edge track.
+
+    temporal-host-info is not integrated here because the latest/edge revision
+    pre-dates that relation. The refresh test integrates it after refreshing to 1.23+.
+    """
+    deploy_temporal_stack(juju, temporal_ui_channel="latest/edge", integrate_host_info=False)
 
     return "temporal-ui-k8s"
 

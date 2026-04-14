@@ -179,11 +179,13 @@ class TestDeployment:
         status = await ops_test.model.get_status()  # noqa: F821
         server_address = status["applications"][APP_NAME_SERVER]["units"][f"{APP_NAME_SERVER}/0"]["address"]
 
-        unit = ops_test.model.applications[APP_NAME].units[0]
-        action = await unit.run("cat /home/ui-server/config/charm.yaml")
-        await action.wait()
-        stdout = action.results.get("stdout") or action.results.get("Stdout")
-        assert stdout is not None, action.results
+        _, stdout, _ = await ops_test.juju(
+            "ssh",
+            "--container",
+            "temporal-ui",
+            f"{APP_NAME}/0",
+            "cat /home/ui-server/config/charm.yaml",
+        )
         charm_config = yaml.safe_load(stdout)
         assert charm_config["temporalGrpcAddress"] == f"{server_address}:7233"
 

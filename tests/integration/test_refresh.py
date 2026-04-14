@@ -6,6 +6,7 @@
 import logging
 
 import jubilant
+from conftest import TEMPORAL_SERVER_JUJU_APP
 
 logger = logging.getLogger(__name__)
 
@@ -17,4 +18,10 @@ def test_refresh_from_latest_to_1_23(juju: jubilant.Juju, ui_latest_track, charm
         path=charm_path,
         resources=charm_resources,
     )
+
+    juju.integrate(
+        f"{TEMPORAL_SERVER_JUJU_APP}:temporal-host-info",
+        f"{ui_latest_track}:temporal-host-info",
+    )
+
     juju.wait(jubilant.all_active, error=jubilant.any_error)
