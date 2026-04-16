@@ -72,7 +72,7 @@ def deploy_temporal_stack(
         config={
             "num-history-shards": 1,
         },
-        base="ubuntu@22.04",
+        base="ubuntu@24.04",
     )
 
     juju.deploy(
