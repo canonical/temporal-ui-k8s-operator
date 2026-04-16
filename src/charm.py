@@ -191,7 +191,8 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         """
         try:
             self._validate()
-        except ValueError:
+        except ValueError as err:
+            self.unit.status = BlockedStatus(str(err))
             return
 
         container = self.unit.get_container(self.name)
@@ -289,6 +290,8 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             raise ValueError("ui:temporal relation: not available")
         if not self._state.server_status == "ready":
             raise ValueError("ui:temporal relation: server is not ready")
+        if not (self.host_info.host and self.host_info.port):
+            raise ValueError("temporal-host-info relation not established")
         if self.model.relations.get("ingress") and self.model.relations.get("nginx-route"):
             raise ValueError("Only one ingress solution is allowed - remove the ingress or the nginx-route relation")
 
