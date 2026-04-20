@@ -5,9 +5,12 @@
 
 """Temporal UI charm integration test helpers."""
 
+import logging
 import socket
 
 from pytest_operator.plugin import OpsTest
+
+logger = logging.getLogger(__name__)
 
 
 def gen_patch_getaddrinfo(host: str, resolve_to: str):  # noqa

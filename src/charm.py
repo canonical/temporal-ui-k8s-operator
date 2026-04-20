@@ -10,6 +10,7 @@ import logging
 import os
 
 from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
+from charms.temporal_k8s.v0.temporal_host_info import TemporalHostInfoRequirer
 from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
 from jinja2 import Environment, FileSystemLoader
 from ops import main, pebble
@@ -91,6 +92,10 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         )
         self.framework.observe(self.ingress.on.ready, self._on_ingress_ready)
         self.framework.observe(self.ingress.on.revoked, self._on_ingress_revoked)
+
+        self.host_info = TemporalHostInfoRequirer(self)
+        self.framework.observe(self.host_info.on.temporal_host_info_changed, self._update)
+        self.framework.observe(self.host_info.on.temporal_host_info_unavailable, self._update)
 
     def _require_nginx_route(self):
         """Require nginx-route relation based on current configuration."""
@@ -186,7 +191,8 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         """
         try:
             self._validate()
-        except ValueError:
+        except ValueError as err:
+            self.unit.status = BlockedStatus(str(err))
             return
 
         container = self.unit.get_container(self.name)
@@ -284,6 +290,8 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             raise ValueError("ui:temporal relation: not available")
         if not self._state.server_status == "ready":
             raise ValueError("ui:temporal relation: server is not ready")
+        if not (self.host_info.host and self.host_info.port):
+            raise ValueError("temporal-host-info relation not established")
         if self.model.relations.get("ingress") and self.model.relations.get("nginx-route"):
             raise ValueError("Only one ingress solution is allowed - remove the ingress or the nginx-route relation")
 
@@ -354,6 +362,12 @@ class TemporalUiK8SOperatorCharm(CharmBase):
                     "NO_PROXY": no_proxy,
                 }
             )
+
+        if not (self.host_info.host and self.host_info.port):
+            self.unit.status = BlockedStatus("temporal-host-info relation not established")
+            return
+
+        context["TEMPORAL_ADDRESS"] = f"{self.host_info.host}:{self.host_info.port}"
 
         config = render("config.jinja", context)
         container.push("/home/ui-server/config/charm.yaml", config, make_dirs=True)

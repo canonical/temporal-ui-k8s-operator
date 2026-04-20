@@ -33,12 +33,16 @@ NGINX_INGRESS_INTEGRATOR_CHANNEL = "latest/edge"
 async def deploy(ops_test: OpsTest):
     """The app is up and running."""
     # Deploy temporal server, temporal admin and postgresql charms.
-    asyncio.gather(
+    await asyncio.gather(
         ops_test.model.deploy(APP_NAME_SERVER, channel=TEMPORAL_CHANNEL, config={"num-history-shards": 1}),
         ops_test.model.deploy(APP_NAME_ADMIN, channel=TEMPORAL_CHANNEL),
         ops_test.model.deploy("postgresql-k8s", channel=POSTGRESQL_K8S_CHANNEL, trust=True),
         ops_test.model.deploy(
-            "nginx-ingress-integrator", channel=NGINX_INGRESS_INTEGRATOR_CHANNEL, revision=100, trust=True, config={"ingress-class": "nginx"},
+            "nginx-ingress-integrator",
+            channel=NGINX_INGRESS_INTEGRATOR_CHANNEL,
+            revision=100,
+            trust=True,
+            config={"ingress-class": "nginx"},
         ),
     )
 
@@ -81,6 +85,7 @@ async def deploy(ops_test: OpsTest):
         )
 
         await ops_test.model.integrate(f"{APP_NAME}:ui", f"{APP_NAME_SERVER}:ui")
+        await ops_test.model.integrate(f"{APP_NAME}:temporal-host-info", f"{APP_NAME_SERVER}:temporal-host-info")
 
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
@@ -130,12 +135,17 @@ class TestDeployment:
                 timeout=1200,
             )
             exit_code, stdout, stderr = await ops_test.run(
-            "kubectl", "-n", "ingress-nginx",
-            "get", "svc", "ingress-nginx-controller",
-            "-o", "jsonpath={.status.loadBalancer.ingress[0].ip}"
+                "kubectl",
+                "-n",
+                "ingress-nginx",
+                "get",
+                "svc",
+                "ingress-nginx-controller",
+                "-o",
+                "jsonpath={.status.loadBalancer.ingress[0].ip}",
             )
             ingress_ip = stdout.strip()
-            
+
             with unittest.mock.patch.multiple(socket, getaddrinfo=gen_patch_getaddrinfo(new_hostname, ingress_ip)):
                 response = requests.get(
                     f"https://{ingress_ip}",
@@ -163,3 +173,45 @@ class TestDeployment:
     async def test_scaling_up(self, ops_test: OpsTest):
         """Scale Temporal worker charm up to 2 units."""
         await scale(ops_test, app=APP_NAME, units=2)
+
+    async def test_host_info_relation(self, ops_test: OpsTest):
+        """Test that the server address from the host-info relation is used in charm config."""
+        status = await ops_test.model.get_status()  # noqa: F821
+        server_address = status["applications"][APP_NAME_SERVER]["units"][f"{APP_NAME_SERVER}/0"]["address"]
+
+        _, stdout, _ = await ops_test.juju(
+            "ssh",
+            "--container",
+            "temporal-ui",
+            f"{APP_NAME}/0",
+            "cat /home/ui-server/config/charm.yaml",
+        )
+        charm_config = yaml.safe_load(stdout)
+        assert charm_config["temporalGrpcAddress"] == f"{server_address}:7233"
+
+    async def test_host_info_relation_removed_causes_blocked(self, ops_test: OpsTest):
+        """Test that removing the host-info relation causes the charm to go blocked."""
+        await ops_test.juju(
+            "remove-relation",
+            f"{APP_NAME}:temporal-host-info",
+            f"{APP_NAME_SERVER}:temporal-host-info",
+        )
+        async with ops_test.fast_forward():
+            await ops_test.model.wait_for_idle(
+                apps=[APP_NAME],
+                status="blocked",
+                raise_on_blocked=False,
+                timeout=300,
+            )
+
+        assert ops_test.model.applications[APP_NAME].units[0].workload_status == "blocked"
+
+        # Re-integrate so subsequent tests still have an active charm.
+        await ops_test.model.integrate(f"{APP_NAME}:temporal-host-info", f"{APP_NAME_SERVER}:temporal-host-info")
+        async with ops_test.fast_forward():
+            await ops_test.model.wait_for_idle(
+                apps=[APP_NAME],
+                status="active",
+                raise_on_blocked=False,
+                timeout=300,
+            )

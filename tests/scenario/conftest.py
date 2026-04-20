@@ -120,6 +120,15 @@ def ui_relation():
 
 
 @pytest.fixture(scope="function")
+def host_info_relation():
+    """Provider app data for temporal-host-info (requirer reads remote app databag)."""
+    return ops.testing.Relation(
+        "temporal-host-info",
+        remote_app_data={"host": "10.0.0.1", "port": "7233"},
+    )
+
+
+@pytest.fixture(scope="function")
 def nginx_relation():
     return ops.testing.Relation("nginx-route")
 
@@ -130,8 +139,8 @@ def traefik_relation():
 
 
 @pytest.fixture
-def all_required_relations(peer_relation, ui_relation):
-    return [peer_relation, ui_relation]
+def all_required_relations(peer_relation, ui_relation, host_info_relation):
+    return [peer_relation, ui_relation, host_info_relation]
 
 
 @pytest.fixture

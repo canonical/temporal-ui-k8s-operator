@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 UI_PORT = "8080"
 
 
-
 def test_smoke(context, state):
     context.run(context.on.start(), state)
 
@@ -27,6 +26,17 @@ def test_blocked_by_temporal_server(context, state, temporal_ui_container, all_r
     state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
 
     assert state_out.unit_status == ops.BlockedStatus("ui:temporal relation: not available")
+
+
+def test_blocked_when_host_info_absent(
+    context, state, temporal_ui_container, all_required_relations, host_info_relation
+):
+    all_required_relations.remove(host_info_relation)
+    state = dataclasses.replace(state, relations=all_required_relations)
+
+    state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
+
+    assert state_out.unit_status == ops.BlockedStatus("temporal-host-info relation not established")
 
 
 def test_blocked_by_peer_relation_not_ready(
@@ -124,6 +134,7 @@ def test_ready(context, state, temporal_ui_container, temporal_ui_container_init
                 "environment": {
                     "LOG_LEVEL": "info",
                     "TEMPORAL_UI_PORT": 8080,
+                    "TEMPORAL_ADDRESS": "10.0.0.1:7233",
                     "TEMPORAL_DEFAULT_NAMESPACE": "default",
                     "TEMPORAL_AUTH_ENABLED": False,
                     "TEMPORAL_WORKFLOW_CANCEL_DISABLED": False,
@@ -177,6 +188,7 @@ def test_auth(
                     "environment": {
                         "LOG_LEVEL": "info",
                         "TEMPORAL_UI_PORT": 8080,
+                        "TEMPORAL_ADDRESS": "10.0.0.1:7233",
                         "TEMPORAL_DEFAULT_NAMESPACE": "default",
                         "TEMPORAL_AUTH_ENABLED": True,
                         "TEMPORAL_AUTH_PROVIDER_URL": "some-provider-url",
@@ -323,5 +335,3 @@ def test_traefik_ingress_ready(
 
     assert state_out.unit_status == ops.MaintenanceStatus("replanning application")
     assert state_out.get_container("temporal-ui").service_statuses["temporal-ui"] == ops.pebble.ServiceStatus.ACTIVE
-
-
