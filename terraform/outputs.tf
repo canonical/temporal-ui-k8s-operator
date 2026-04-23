@@ -10,7 +10,8 @@ output "provides" {
 
 output "requires" {
   value = {
-    ingress     = "ingress"
-    nginx_route = "nginx-route"
+    ingress            = "ingress"
+    nginx_route        = "nginx-route"
+    temporal_host_info = "temporal-host-info"
   }
 }
