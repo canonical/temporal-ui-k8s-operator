@@ -17,6 +17,7 @@ def test_refresh_from_latest_to_1_23(juju: jubilant.Juju, ui_latest_track, charm
         ui_latest_track,
         path=charm_path,
         resources=charm_resources,
+        base="ubuntu@24.04",
     )
 
     # Wait for the refreshed charm to settle: it requires temporal-host-info and will
