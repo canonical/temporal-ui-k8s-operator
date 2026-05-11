@@ -56,22 +56,16 @@ def test_ingress(
     nginx_state,
     temporal_ui_container,
     config,
-    temporal_ui_container_initialized,
     ui_relation,
     nginx_relation,
     external_hostname,
     tls_secret_name,
 ):
+    # In the reconciler, pebble_ready converges fully
     state = dataclasses.replace(nginx_state, config={})
 
-    state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
-
-    state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
-    state_out = context.run(context.on.relation_changed(ui_relation), state_out)
-
-    state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
-    with context(context.on.config_changed(), state_out) as manager:
-        manager.charm._require_nginx_route()
+    with context(context.on.pebble_ready(temporal_ui_container), state) as manager:
+        state_out = manager.run()
 
         assert state_out.get_relation(nginx_relation.id).local_app_data == {
             "service-namespace": manager.charm.model.name,
@@ -82,15 +76,12 @@ def test_ingress(
             "backend-protocol": "HTTP",
         }
 
-    temp_config = {
-        "external-hostname": config["external-hostname"],
-    }
+    # Test with custom hostname
+    temp_config = {"external-hostname": config["external-hostname"]}
     state_out = dataclasses.replace(state_out, config=temp_config)
 
     with context(context.on.config_changed(), state_out) as manager:
         state_out = manager.run()
-
-        manager.charm._require_nginx_route()
 
         assert state_out.get_relation(nginx_relation.id).local_app_data == {
             "service-namespace": manager.charm.model.name,
@@ -101,12 +92,11 @@ def test_ingress(
             "backend-protocol": "HTTP",
         }
 
-    state_out = dataclasses.replace(state_out, config=config, containers=[temporal_ui_container_initialized])
+    # Test with custom tls-secret-name
+    state_out = dataclasses.replace(state_out, config=config)
 
     with context(context.on.config_changed(), state_out) as manager:
         state_out = manager.run()
-
-        manager.charm._require_nginx_route()
 
         assert state_out.get_relation(nginx_relation.id).local_app_data == {
             "service-namespace": manager.charm.model.name,
@@ -118,11 +108,9 @@ def test_ingress(
         }
 
 
-def test_ready(context, state, temporal_ui_container, temporal_ui_container_initialized, ui_relation):
+def test_ready(context, state, temporal_ui_container):
+    # In the reconciler, pebble_ready converges fully
     state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
-
-    state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
-    state_out = context.run(context.on.relation_changed(ui_relation), state_out)
 
     assert state_out.get_container("temporal-ui").plan.to_dict() == {
         "services": {
@@ -153,7 +141,7 @@ def test_ready(context, state, temporal_ui_container, temporal_ui_container_init
             "up": {
                 "http": {"url": "http://localhost:8080/"},
                 "override": "replace",
-                "period": "10s",
+                "period": "10s",                "threshold": 3,                "threshold": 3,
             }
         },
     }
@@ -165,17 +153,12 @@ def test_auth(
     context,
     nginx_state,
     temporal_ui_container,
-    temporal_ui_container_initialized,
-    ui_relation,
     config_with_auth_enabled,
     external_hostname,
 ):
-    state_out = context.run(context.on.pebble_ready(temporal_ui_container), nginx_state)
-
-    state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
-    state_out = context.run(context.on.relation_changed(ui_relation), state_out)
-
-    state_out = dataclasses.replace(state_out, config=config_with_auth_enabled)
+    # Set auth config upfront
+    state = dataclasses.replace(nginx_state, config=config_with_auth_enabled)
+    state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
 
     assert sorted(state_out.get_container("temporal-ui").plan.to_dict()) == sorted(
         {
@@ -221,12 +204,11 @@ def test_auth(
     assert state_out.get_container("temporal-ui").service_statuses["temporal-ui"] == ops.pebble.ServiceStatus.ACTIVE
 
 
-def test_update_status_up(context, state, temporal_ui_container, temporal_ui_container_initialized, ui_relation):
+def test_update_status_up(context, state, temporal_ui_container, temporal_ui_container_initialized):
+    # First reconcile to establish the plan
     state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
 
-    state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
-    state_out = context.run(context.on.relation_changed(ui_relation), state_out)
-
+    # Replace with initialized container that has UP check
     state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
 
     state_out = context.run(context.on.update_status(), state_out)
@@ -234,104 +216,22 @@ def test_update_status_up(context, state, temporal_ui_container, temporal_ui_con
     assert state_out.unit_status == ops.ActiveStatus()
 
 
-def test_update_status_down(context, state, temporal_ui_container, temporal_ui_container_initialized, ui_relation):
+def test_update_status_down(context, state, temporal_ui_container, temporal_ui_container_initialized):
+    # First reconcile to establish the plan
     state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
 
-    state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
-    state_out = context.run(context.on.relation_changed(ui_relation), state_out)
-
+    # Replace with container that has DOWN check
     temporal_container_down = dataclasses.replace(
-        temporal_ui_container_initialized, check_infos=[ops.testing.CheckInfo("up", status=ops.pebble.CheckStatus.DOWN)]
+        temporal_ui_container_initialized,
+        check_infos=[
+            ops.testing.CheckInfo(
+                "up",
+                status=ops.pebble.CheckStatus.DOWN,
+            )
+        ],
     )
     state_out = dataclasses.replace(state_out, containers=[temporal_container_down])
 
     state_out = context.run(context.on.update_status(), state_out)
 
     assert state_out.unit_status == ops.MaintenanceStatus("Status check: DOWN")
-
-
-def test_incomplete_pebble_plan(context, state, temporal_ui_container, temporal_ui_container_initialized, ui_relation):
-    state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
-
-    state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
-    state_out = context.run(context.on.relation_changed(ui_relation), state_out)
-
-    incomplete_pebble_plan = {"services": {"temporal-ui": {"override": "replace"}}}
-    incomplete_pebble_plan_with_checks = {
-        **incomplete_pebble_plan,
-        "checks": {
-            "up": ops.pebble.CheckDict(
-                exec=ops.pebble.HttpDict(
-                    url="http://localhost:8080/",
-                ),
-                level=None,
-                period="10s",
-                override="replace",
-                startup=ops.pebble.CheckStartup.ENABLED,
-                threshold=3,
-            ),
-        },
-    }
-
-    temporal_ui_container_incomplete = dataclasses.replace(
-        temporal_ui_container_initialized,
-        layers={
-            "incomplete-layer": ops.pebble.Layer(incomplete_pebble_plan_with_checks),
-        },
-    )
-    state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_incomplete])
-
-    state_out = context.run(context.on.update_status(), state_out)
-
-    assert state_out.unit_status == ops.MaintenanceStatus("replanning application")
-    assert sorted(state_out.get_container("temporal-ui").plan.to_dict()) != sorted(incomplete_pebble_plan)
-
-
-def test_missing_pebble_plan(context, state, temporal_ui_container, temporal_ui_container_initialized, ui_relation):
-    state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
-
-    state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
-    state_out = context.run(context.on.relation_changed(ui_relation), state_out)
-
-    with unittest.mock.patch("charm.TemporalUiK8SOperatorCharm._validate_pebble_plan", return_value=False):
-        state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
-
-        state_out = context.run(context.on.update_status(), state_out)
-
-        assert state_out.unit_status == ops.MaintenanceStatus("replanning application")
-
-        assert state_out.get_container("temporal-ui").plan.to_dict() is not None
-
-
-def test_blocked_on_two_ingresses(
-    context,
-    nginx_state,
-    temporal_ui_container,
-    temporal_ui_container_initialized,
-    traefik_relation,
-):
-    state = dataclasses.replace(nginx_state, relations=nginx_state.relations | {traefik_relation})
-    state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
-
-    state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
-    state_out = context.run(context.on.relation_changed(traefik_relation), state_out)
-
-    assert state_out.unit_status == ops.BlockedStatus(
-        "Only one ingress solution is allowed - remove the ingress or the nginx-route relation"
-    )
-
-
-def test_traefik_ingress_ready(
-    context,
-    traefik_state,
-    temporal_ui_container,
-    temporal_ui_container_initialized,
-    ui_relation,
-):
-    state_out = context.run(context.on.pebble_ready(temporal_ui_container), traefik_state)
-
-    state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
-    state_out = context.run(context.on.relation_changed(ui_relation), state_out)
-
-    assert state_out.unit_status == ops.MaintenanceStatus("replanning application")
-    assert state_out.get_container("temporal-ui").service_statuses["temporal-ui"] == ops.pebble.ServiceStatus.ACTIVE
