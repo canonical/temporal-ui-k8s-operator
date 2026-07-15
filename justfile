@@ -23,17 +23,8 @@ unit:
 static:
 	uv tool run --with tox-uv tox -e static
 
-# Run integration tests (packs the charm into build/ first, as the jubilant refresh
-# test expects a local *.charm. It must not live in the project root: pytest-operator's
-# build_charm (used by the other integration tests) relocates *.charm files out of the
-# root, which would remove it before the refresh test runs.)
+# Run integration tests
 integration *args:
-	#!/usr/bin/bash
-	set -euo pipefail
-	rm -f ./*.charm build/*.charm
-	mkdir -p build
-	charmcraft pack
-	mv ./*.charm build/
 	uv tool run --with tox-uv tox -e integration -- {{args}}
 
 # Print system state to help debug a failed run
