@@ -31,4 +31,4 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           channel: 1.31/edge
           tag-prefix: temporal-ui-k8s
-          charmcraft-channel: 3.x/stable
+          charmcraft-channel: 4.x/stable
