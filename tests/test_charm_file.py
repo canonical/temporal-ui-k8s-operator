@@ -11,7 +11,12 @@ from tests.charm_file import find_built_charm
 
 
 def test_find_built_charm_prefers_build_dir(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
-    """Find the built charm in the default build directory."""
+    """Find the built charm in the default build directory.
+
+    Args:
+        tmp_path: Temporary directory fixture for arranging test files.
+        monkeypatch: Fixture to isolate environment variable updates.
+    """
     project_root = tmp_path / "project"
     project_root.mkdir()
     build_dir = project_root / "build"
@@ -25,7 +30,12 @@ def test_find_built_charm_prefers_build_dir(tmp_path: pathlib.Path, monkeypatch:
 
 
 def test_find_built_charm_honours_charm_build_dir(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
-    """Prefer an explicit CHARM_BUILD_DIR over default locations."""
+    """Prefer an explicit CHARM_BUILD_DIR over default locations.
+
+    Args:
+        tmp_path: Temporary directory fixture for arranging test files.
+        monkeypatch: Fixture to isolate environment variable updates.
+    """
     project_root = tmp_path / "project"
     project_root.mkdir()
     charm_build_dir = tmp_path / "artifacts"

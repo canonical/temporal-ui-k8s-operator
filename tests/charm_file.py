@@ -26,9 +26,10 @@ def find_built_charm(project_root: pathlib.Path) -> pathlib.Path:
 
     search_dirs.extend((project_root, project_root / "build"))
 
-    charms = {
-        charm.resolve() for search_dir in search_dirs if search_dir.exists() for charm in search_dir.glob("*.charm")
-    }
+    charms: set[pathlib.Path] = set()
+    for search_dir in search_dirs:
+        if search_dir.exists():
+            charms.update(charm.resolve() for charm in search_dir.glob("*.charm"))
 
     assert charms, "*.charm not found in project root or build directory"
     assert len(charms) == 1, "More than one *.charm file found, unsure which to use"
