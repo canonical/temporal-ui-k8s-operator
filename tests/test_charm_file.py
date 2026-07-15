@@ -1,6 +1,8 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+"""Tests for charm artifact discovery helpers."""
+
 import pathlib
 
 import pytest
@@ -9,6 +11,7 @@ from tests.charm_file import find_built_charm
 
 
 def test_find_built_charm_prefers_build_dir(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+    """Find the built charm in the default build directory."""
     project_root = tmp_path / "project"
     project_root.mkdir()
     build_dir = project_root / "build"
@@ -21,9 +24,8 @@ def test_find_built_charm_prefers_build_dir(tmp_path: pathlib.Path, monkeypatch:
     assert find_built_charm(project_root) == charm.resolve()
 
 
-def test_find_built_charm_honours_charm_build_dir(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_find_built_charm_honours_charm_build_dir(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+    """Prefer an explicit CHARM_BUILD_DIR over default locations."""
     project_root = tmp_path / "project"
     project_root.mkdir()
     charm_build_dir = tmp_path / "artifacts"
