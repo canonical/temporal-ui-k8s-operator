@@ -7,7 +7,9 @@ import pathlib
 
 import jubilant
 import pytest
+import pytest_asyncio
 import yaml
+from pytest_operator.plugin import OpsTest
 
 POSTGRESQL_K8S_CHANNEL = "14/stable"
 
@@ -128,14 +130,20 @@ def ui_latest_track(juju: jubilant.Juju):
     return "temporal-ui-k8s"
 
 
-@pytest.fixture(scope="module")
-def charm_path() -> pathlib.Path:
-    """Returns the absolute path of the locally built ui-k8s charm."""
-    charm_dir = pathlib.Path(__file__).parent.parent.parent
-    charms = [p.absolute() for p in charm_dir.glob("*.charm")]
-    assert charms, "*.charm not found in project root"
-    assert len(charms) == 1, "More than one *.charm file found in project root, unsure which to use"
-    return charms[0]
+@pytest_asyncio.fixture(scope="module")
+async def charm_path(request: pytest.FixtureRequest, ops_test: OpsTest) -> str | pathlib.Path:
+    """Build (or locate via --charm-file) the ui-k8s charm and return its path.
+
+    Uses pytest-operator's build_charm so the artifact is managed the same way as
+    the rest of the integration suite. Relying on a pre-packed charm in the project
+    root or build/ does not work: pytest-operator's build_charm relocates root
+    *.charm files and deletes the build/ directory.
+    """
+    if charms := request.config.getoption("--charm-file"):
+        return charms[0]
+    charm = await ops_test.build_charm(".")
+    assert charm, "Charm not built"
+    return charm
 
 
 @pytest.fixture(scope="module")
