@@ -3,7 +3,6 @@ name: Publish charm
 on:
   push:
     branches:
-      - main
       - track/**
 
 jobs:
