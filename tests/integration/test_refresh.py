@@ -1,18 +1,17 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Test to ensure successful refreshes from latest track to the 1.23 track."""
+"""Test to ensure successful refreshes from the latest supported release to the newer charm."""
 
 import logging
 
 import jubilant
-from conftest import TEMPORAL_SERVER_JUJU_APP
 
 logger = logging.getLogger(__name__)
 
 
 def test_refresh_from_latest_to_1_23(juju: jubilant.Juju, ui_latest_track, charm_path, charm_resources):
-    """Test to refresh from latest track to the 1.23 track."""
+    """Refresh from the latest supported temporal-ui-k8s release to the local build."""
     juju.refresh(
         ui_latest_track,
         path=charm_path,
@@ -20,14 +19,6 @@ def test_refresh_from_latest_to_1_23(juju: jubilant.Juju, ui_latest_track, charm
         base="ubuntu@24.04",
     )
 
-    # Wait for the refreshed charm to settle: it requires temporal-host-info and will
-    # be blocked until the relation is established. This ensures upgrade hooks complete
-    # before we trigger temporal-k8s to process the new relation-joined hook.
-    juju.wait(lambda status: jubilant.all_blocked(status, ui_latest_track))
-
-    juju.integrate(
-        f"{TEMPORAL_SERVER_JUJU_APP}:temporal-host-info",
-        f"{ui_latest_track}:temporal-host-info",
-    )
-
+    # temporal-host-info is already integrated by the ui_latest_track fixture, so the
+    # refreshed charm should settle back to active without further intervention.
     juju.wait(jubilant.all_active, error=jubilant.any_error)

@@ -10,7 +10,12 @@ import pytest
 import yaml
 
 POSTGRESQL_K8S_CHANNEL = "14/stable"
-TEMPORAL_CHANNEL = "1.23/edge"
+
+# Temporal charm channels. Bump these when the charms migrate to a new track
+# (e.g. 1.23 -> 1.31).
+TEMPORAL_CHANNEL = "1.23/edge"  # server/admin dependencies and the default ui deploy
+TEMPORAL_UI_LATEST_RELEASE_CHANNEL = "1.23/stable"  # published ui release the refresh test upgrades from
+
 TEMPORAL_SERVER_JUJU_APP = "temporal-k8s"
 
 METADATA = yaml.safe_load(pathlib.Path("./metadata.yaml").read_text())
@@ -47,9 +52,8 @@ def deploy_temporal_stack(
         temporal_server_channel: channel for temporal-k8s
         temporal_admin_channel: channel for temporal-admin-k8s
         temporal_ui_channel: channel for temporal-ui-k8s
-        integrate_host_info: whether to integrate the temporal-host-info relation.
-            Set to False when deploying temporal-ui-k8s from latest/edge (pre-dates
-            the relation); the test is responsible for integrating after refresh.
+        integrate_host_info: whether to integrate the temporal-host-info relation
+            during deployment (default True).
     """
     juju.model_config(
         values={
@@ -113,12 +117,13 @@ def deploy_temporal_stack(
 
 @pytest.fixture(scope="module")
 def ui_latest_track(juju: jubilant.Juju):
-    """Deploy the temporal stack with temporal-ui from the latest/edge track.
+    """Deploy the temporal stack with temporal-ui from the latest supported release.
 
-    temporal-host-info is not integrated here because the latest/edge revision
-    pre-dates that relation. The refresh test integrates it after refreshing to 1.23+.
+    temporal-host-info is integrated during deployment because the latest supported
+    release already requires the relation, so the charm would otherwise stay blocked.
+    The refresh test then upgrades this deployment to the newer, locally built charm.
     """
-    deploy_temporal_stack(juju, temporal_ui_channel="latest/edge", integrate_host_info=False)
+    deploy_temporal_stack(juju, temporal_ui_channel=TEMPORAL_UI_LATEST_RELEASE_CHANNEL)
 
     return "temporal-ui-k8s"
 
