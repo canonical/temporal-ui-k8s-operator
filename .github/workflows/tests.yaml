@@ -1,0 +1,81 @@
+name: Tests
+
+on:
+  pull_request:
+    paths-ignore:
+      - '**.md'
+  workflow_call:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo snap install astral-uv --classic
+          sudo snap install just --classic
+
+      - name: Run lint
+        run: just lint
+
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo snap install astral-uv --classic
+          sudo snap install just --classic
+
+      - name: Run unit tests
+        run: just unit
+
+  integration-tests:
+    name: Integration tests
+    runs-on: [self-hosted, linux, X64, large, noble]
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - test_charm
+          - test_refresh
+          - test_traefik_ingress
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo snap install concierge --classic
+
+          sudo concierge prepare \
+            -p k8s \
+            --juju-channel 3.6/stable \
+            --charmcraft-channel 4.x/stable \
+            --extra-snaps="astral-uv,just,kubectl"
+
+          sudo k8s kubectl config view --raw > ~/.kube/config
+
+      - name: Set up ingress
+        run: .github/scripts/init-pytest-ui.sh
+
+      - name: Run integration tests
+        run: just integration tests/integration/${{ matrix.test }}.py
+
+      - name: Get system state (if failure)
+        if: failure()
+        run: just get-system-state
