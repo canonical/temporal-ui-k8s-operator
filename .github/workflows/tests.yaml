@@ -47,6 +47,13 @@ jobs:
     name: Integration tests
     runs-on: [self-hosted, linux, X64, large, noble]
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - test_charm
+          - test_refresh
+          - test_traefik_ingress
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -67,7 +74,7 @@ jobs:
         run: .github/scripts/init-pytest-ui.sh
 
       - name: Run integration tests
-        run: just integration
+        run: just integration tests/integration/${{ matrix.test }}.py
 
       - name: Get system state (if failure)
         if: failure()
