@@ -9,7 +9,7 @@ import jubilant
 
 logger = logging.getLogger(__name__)
 
-@pytest.skip("Skipping because of canonical/temporal-k8s-operator/issues/150")
+
 def test_refresh_from_latest_to_1_23(juju: jubilant.Juju, ui_latest_track, charm_path, charm_resources):
     """Refresh from the latest supported temporal-ui-k8s release to the local build."""
     juju.refresh(
