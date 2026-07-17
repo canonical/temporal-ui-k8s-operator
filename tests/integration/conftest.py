@@ -16,7 +16,7 @@ POSTGRESQL_K8S_CHANNEL = "14/stable"
 # Temporal charm channels. Bump these when the charms migrate to a new track
 # (e.g. 1.23 -> 1.31).
 TEMPORAL_CHANNEL = "1.31/edge"  # server/admin dependencies and the default ui deploy
-TEMPORAL_UI_LATEST_RELEASE_CHANNEL = "1.31/stable"  # published ui release the refresh test upgrades from
+TEMPORAL_UI_LATEST_RELEASE_CHANNEL = "1.23/stable"  # published ui release the refresh test upgrades from
 
 TEMPORAL_SERVER_JUJU_APP = "temporal-k8s"
 
