@@ -85,14 +85,14 @@ def deploy_temporal_stack(
         charm="temporal-admin-k8s",
         app="temporal-admin-k8s",
         channel=temporal_admin_channel,
-        base="ubuntu@22.04",
+        base="ubuntu@24.04",
     )
 
     juju.deploy(
         charm="temporal-ui-k8s",
         app="temporal-ui-k8s",
         channel=temporal_ui_channel,
-        base="ubuntu@22.04",
+        base="ubuntu@24.04",
     )
 
     juju.wait(
