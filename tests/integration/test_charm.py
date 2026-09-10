@@ -187,7 +187,8 @@ class TestDeployment:
             "cat /home/ui-server/config/charm.yaml",
         )
         charm_config = yaml.safe_load(stdout)
-        assert charm_config["temporalGrpcAddress"] == f"{server_address}:7233"
+        # FIXME: change port back to 7233 when canonical/temporal-k8s-operator#152 is resolved
+        assert charm_config["temporalGrpcAddress"] == f"{server_address}:7236"
 
     async def test_host_info_relation_removed_causes_blocked(self, ops_test: OpsTest):
         """Test that removing the host-info relation causes the charm to go blocked."""
