@@ -71,6 +71,11 @@ options:
         Whether to send a JWT access token as "authorization" header in requests with the Codec Server.
     default: False
     type: boolean
+  start-workflow-disabled:
+    description: |
+        Whether or not starting workflows is disabled through the UI.
+    default: False
+    type: boolean
   workflow-terminate-disabled:
     description: |
         Whether or not workflow termination is disabled through the UI.

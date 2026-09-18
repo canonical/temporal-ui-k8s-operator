@@ -141,6 +141,7 @@ def test_ready(context, state, temporal_ui_container, temporal_ui_container_init
                     "TEMPORAL_WORKFLOW_RESET_DISABLED": False,
                     "TEMPORAL_WORKFLOW_SIGNAL_DISABLED": False,
                     "TEMPORAL_WORKFLOW_TERMINATE_DISABLED": False,
+                    "TEMPORAL_START_WORKFLOW_DISABLED": False,
                     "TEMPORAL_HIDE_WORKFLOW_QUERY_ERRORS": False,
                     "TEMPORAL_CODEC_ENDPOINT": "",
                     "TEMPORAL_CODEC_PASS_ACCESS_TOKEN": False,  # nosec B105
@@ -159,6 +160,35 @@ def test_ready(context, state, temporal_ui_container, temporal_ui_container_init
     }
 
     assert state_out.get_container("temporal-ui").service_statuses["temporal-ui"] == ops.pebble.ServiceStatus.ACTIVE
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_start_workflow_disabled_config(
+    context,
+    state,
+    temporal_ui_container,
+    temporal_ui_container_initialized,
+    ui_relation,
+    value,
+):
+    state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
+    state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
+    state_out = context.run(context.on.relation_changed(ui_relation), state_out)
+
+    state_out = dataclasses.replace(
+        state_out,
+        config={"start-workflow-disabled": value},
+        containers=[temporal_ui_container_initialized],
+    )
+
+    with context(context.on.config_changed(), state_out) as manager:
+        state_out = manager.run()
+
+        env = state_out.get_container("temporal-ui").plan.to_dict()["services"]["temporal-ui"]["environment"]
+        assert env["TEMPORAL_START_WORKFLOW_DISABLED"] == value
+
+        config = manager.charm.unit.get_container("temporal-ui").pull("/home/ui-server/config/charm.yaml").read()
+        assert f"startWorkflowDisabled: {value}" in config
 
 
 def test_auth(
@@ -200,6 +230,7 @@ def test_auth(
                         "TEMPORAL_WORKFLOW_RESET_DISABLED": False,
                         "TEMPORAL_WORKFLOW_SIGNAL_DISABLED": False,
                         "TEMPORAL_WORKFLOW_TERMINATE_DISABLED": False,
+                        "TEMPORAL_START_WORKFLOW_DISABLED": False,
                         "TEMPORAL_HIDE_WORKFLOW_QUERY_ERRORS": False,
                         "TEMPORAL_CODEC_ENDPOINT": "",
                         "TEMPORAL_CODEC_PASS_ACCESS_TOKEN": False,  # nosec B105
