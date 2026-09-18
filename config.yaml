@@ -73,7 +73,7 @@ options:
     type: boolean
   start-workflow-disabled:
     description: |
-        Disable starting workflows from the Temporal UI.
+        Whether or not starting workflows is disabled through the UI.
     default: False
     type: boolean
   workflow-terminate-disabled:
