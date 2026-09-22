@@ -329,6 +329,7 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             "auth-enabled": "TEMPORAL_AUTH_ENABLED",
             "codec-endpoint": "TEMPORAL_CODEC_ENDPOINT",
             "codec-pass-access-token": "TEMPORAL_CODEC_PASS_ACCESS_TOKEN",
+            "start-workflow-disabled": "TEMPORAL_START_WORKFLOW_DISABLED",
             "workflow-terminate-disabled": "TEMPORAL_WORKFLOW_TERMINATE_DISABLED",
             "workflow-cancel-disabled": "TEMPORAL_WORKFLOW_CANCEL_DISABLED",
             "workflow-signal-disabled": "TEMPORAL_WORKFLOW_SIGNAL_DISABLED",
