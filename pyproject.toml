@@ -50,6 +50,8 @@ lint = [
     "pyproject-flake8==7.0.0",
     "flake8-docstrings-complete>=1.0.3",
     "flake8-test-docs>=1.0",
+    "types-PyYAML",
+    "types-requests",
 ]
 
 # formatting
