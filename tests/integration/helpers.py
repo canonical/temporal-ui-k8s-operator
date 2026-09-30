@@ -5,12 +5,28 @@
 
 """Temporal UI charm integration test helpers."""
 
+import contextlib
 import logging
 import socket
+from collections.abc import Generator
 
-from pytest_operator.plugin import OpsTest
+import jubilant
+from jubilant.statustypes import UnitStatus
 
 logger = logging.getLogger(__name__)
+
+
+def unit_status(juju: jubilant.Juju, app: str, num: int = 0) -> UnitStatus:
+    """Return the status of a single unit of an application.
+
+    Args:
+        juju: Jubilant Juju client bound to the test model.
+        app: Application the unit belongs to.
+        num: Unit number within the application.
+    Returns:
+        Status of the requested unit.
+    """
+    return juju.status().apps[app].units[f"{app}/{num}"]
 
 
 def gen_patch_getaddrinfo(host: str, resolve_to: str):  # noqa
@@ -42,26 +58,35 @@ def gen_patch_getaddrinfo(host: str, resolve_to: str):  # noqa
     return patched_getaddrinfo
 
 
-async def scale(ops_test: OpsTest, app, units):
+@contextlib.contextmanager
+def fast_forward(juju: jubilant.Juju) -> Generator[None, None, None]:
+    """Temporarily speed up update-status hooks to fire every 10s.
+
+    Args:
+        juju: Jubilant Juju client bound to the test model.
+    """
+    old = juju.model_config()["update-status-hook-interval"]
+    juju.model_config({"update-status-hook-interval": "10s"})
+    try:
+        yield
+    finally:
+        juju.model_config({"update-status-hook-interval": old})
+
+
+def scale(juju: jubilant.Juju, app: str, units: int):
     """Scale the application to the provided number and wait for idle.
 
     Args:
-        ops_test: PyTest object.
+        juju: Jubilant Juju client bound to the test model.
         app: Application to be scaled.
         units: Number of units required.
     """
-    await ops_test.model.applications[app].scale(scale=units)
+    juju.cli("scale-application", app, str(units))
 
-    # Wait for model to settle
-    async with ops_test.fast_forward():
-        await ops_test.model.wait_for_idle(
-            apps=[app],
-            status="active",
-            idle_period=30,
-            raise_on_error=False,
-            raise_on_blocked=True,
+    with fast_forward(juju):
+        juju.wait(
+            lambda status: (jubilant.all_active(status, app) and len(status.apps[app].units) == units),
             timeout=600,
-            wait_for_exact_units=units,
+            successes=30,
         )
-
-        assert len(ops_test.model.applications[app].units) == units
+        assert len(juju.status().apps[app].units) == units

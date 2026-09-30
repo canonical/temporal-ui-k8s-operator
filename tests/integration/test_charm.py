@@ -4,23 +4,22 @@
 
 """Temporal UI charm integration tests."""
 
-import asyncio
 import logging
+import pathlib
 import socket
+import subprocess
 import unittest.mock
-from pathlib import Path
 
+import jubilant
 import pytest
-import pytest_asyncio
 import requests
 import yaml
 from conftest import POSTGRESQL_K8S_CHANNEL, TEMPORAL_CHANNEL
-from helpers import gen_patch_getaddrinfo, scale
-from pytest_operator.plugin import OpsTest
+from helpers import fast_forward, gen_patch_getaddrinfo, scale, unit_status
 
 logger = logging.getLogger(__name__)
 
-METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
+METADATA = yaml.safe_load(pathlib.Path("./metadata.yaml").read_text())
 APP_NAME = METADATA["name"]
 
 APP_NAME_SERVER = "temporal-k8s"
@@ -29,80 +28,58 @@ APP_NAME_ADMIN = "temporal-admin-k8s"
 NGINX_INGRESS_INTEGRATOR_CHANNEL = "latest/edge"
 
 
-@pytest_asyncio.fixture(name="deploy", scope="module")
-async def deploy(ops_test: OpsTest):
+@pytest.fixture(name="deploy", scope="module")
+def deploy(juju: jubilant.Juju, charm_path: pathlib.Path, charm_resources: dict[str, str]):
     """The app is up and running."""
-    # Deploy temporal server, temporal admin and postgresql charms.
-    await asyncio.gather(
-        ops_test.model.deploy(APP_NAME_SERVER, channel=TEMPORAL_CHANNEL, config={"num-history-shards": 1}),
-        ops_test.model.deploy(APP_NAME_ADMIN, channel=TEMPORAL_CHANNEL),
-        ops_test.model.deploy("postgresql-k8s", channel=POSTGRESQL_K8S_CHANNEL, trust=True),
-        ops_test.model.deploy(
-            "nginx-ingress-integrator",
-            channel=NGINX_INGRESS_INTEGRATOR_CHANNEL,
-            revision=100,
-            trust=True,
-            config={"ingress-class": "nginx"},
-        ),
+    juju.deploy(APP_NAME_SERVER, channel=TEMPORAL_CHANNEL, config={"num-history-shards": 1})
+    juju.deploy(APP_NAME_ADMIN, channel=TEMPORAL_CHANNEL)
+    juju.deploy("postgresql-k8s", channel=POSTGRESQL_K8S_CHANNEL, trust=True)
+    juju.deploy(
+        "nginx-ingress-integrator",
+        channel=NGINX_INGRESS_INTEGRATOR_CHANNEL,
+        revision=100,
+        trust=True,
+        config={"ingress-class": "nginx"},
     )
+    juju.deploy(charm_path, app=APP_NAME, resources=charm_resources)
 
-    charm = await ops_test.build_charm(".")
-    resources = {"temporal-ui-image": METADATA["resources"]["temporal-ui-image"]["upstream-source"]}
-
-    await ops_test.model.deploy(charm, resources=resources, application_name=APP_NAME)
-
-    async with ops_test.fast_forward():
-        await ops_test.model.wait_for_idle(
-            apps=[APP_NAME, APP_NAME_SERVER, APP_NAME_ADMIN],
-            status="blocked",
-            raise_on_blocked=False,
+    with fast_forward(juju):
+        juju.wait(
+            lambda status: jubilant.all_blocked(status, APP_NAME, APP_NAME_SERVER, APP_NAME_ADMIN),
             timeout=600,
         )
-        await ops_test.model.wait_for_idle(
-            apps=["postgresql-k8s"],
-            status="active",
-            raise_on_blocked=False,
+        juju.wait(
+            lambda status: jubilant.all_active(status, "postgresql-k8s"),
+            timeout=1200,
+        )
+        juju.wait(
+            lambda status: jubilant.all_waiting(status, "nginx-ingress-integrator"),
             timeout=1200,
         )
 
-        await ops_test.model.wait_for_idle(
-            apps=["nginx-ingress-integrator"],
-            status="waiting",
-            raise_on_blocked=False,
-            timeout=1200,
-        )
+        juju.integrate(f"{APP_NAME_SERVER}:db", "postgresql-k8s:database")
+        juju.integrate(f"{APP_NAME_SERVER}:visibility", "postgresql-k8s:database")
+        juju.integrate(f"{APP_NAME_SERVER}:admin", f"{APP_NAME_ADMIN}:admin")
 
-        assert ops_test.model.applications[APP_NAME].units[0].workload_status == "blocked"
-        await ops_test.model.integrate(f"{APP_NAME_SERVER}:db", "postgresql-k8s:database")
-        await ops_test.model.integrate(f"{APP_NAME_SERVER}:visibility", "postgresql-k8s:database")
-        await ops_test.model.integrate(f"{APP_NAME_SERVER}:admin", f"{APP_NAME_ADMIN}:admin")
-
-        await ops_test.model.wait_for_idle(
-            apps=[APP_NAME_SERVER, APP_NAME_ADMIN],
-            status="active",
-            raise_on_blocked=False,
+        juju.wait(
+            lambda status: jubilant.all_active(status, APP_NAME_SERVER, APP_NAME_ADMIN),
             timeout=300,
         )
 
-        await ops_test.model.integrate(f"{APP_NAME}:ui", f"{APP_NAME_SERVER}:ui")
-        await ops_test.model.integrate(f"{APP_NAME}:temporal-host-info", f"{APP_NAME_SERVER}:temporal-host-info")
+        juju.integrate(f"{APP_NAME}:ui", f"{APP_NAME_SERVER}:ui")
+        juju.integrate(f"{APP_NAME}:temporal-host-info", f"{APP_NAME_SERVER}:temporal-host-info")
 
-        await ops_test.model.wait_for_idle(
-            apps=[APP_NAME],
-            status="active",
-            raise_on_blocked=False,
+        juju.wait(
+            lambda status: jubilant.all_active(status, APP_NAME),
             timeout=300,
         )
 
-        await ops_test.model.integrate(f"{APP_NAME}:nginx-route", "nginx-ingress-integrator:nginx-route")
+        juju.integrate(f"{APP_NAME}:nginx-route", "nginx-ingress-integrator:nginx-route")
 
-        await ops_test.model.wait_for_idle(
-            apps=[APP_NAME, "nginx-ingress-integrator"],
-            status="active",
-            raise_on_blocked=False,
+        juju.wait(
+            lambda status: jubilant.all_active(status, APP_NAME, "nginx-ingress-integrator"),
             timeout=300,
         )
-        assert ops_test.model.applications[APP_NAME].units[0].workload_status == "active"
 
 
 @pytest.mark.abort_on_fail
@@ -110,41 +87,41 @@ async def deploy(ops_test: OpsTest):
 class TestDeployment:
     """Integration tests for Temporal UI charm."""
 
-    async def test_basic_client(self, ops_test: OpsTest):
+    def test_basic_client(self, juju: jubilant.Juju):
         """Perform GET request on the Temporal UI host."""
-        status = await ops_test.model.get_status()  # noqa: F821
-        address = status["applications"][APP_NAME]["units"][f"{APP_NAME}/0"]["address"]
-        url = f"http://{address}:8080"
+        url = f"http://{unit_status(juju, APP_NAME).address}:8080"
         logger.info("curling app address: %s", url)
 
         response = requests.get(url, timeout=300)
         assert response.status_code == 200
 
-    async def test_ingress(self, ops_test: OpsTest):
+    def test_ingress(self, juju: jubilant.Juju):
         """Set external-hostname and test connectivity through ingress."""
         new_hostname = "temporal-web"
-        application = ops_test.model.applications[APP_NAME]
-        await application.set_config({"external-hostname": new_hostname})
+        juju.config(APP_NAME, {"external-hostname": new_hostname})
 
-        async with ops_test.fast_forward():
-            await ops_test.model.wait_for_idle(
-                apps=[APP_NAME, "nginx-ingress-integrator"],
-                status="active",
-                raise_on_blocked=False,
-                idle_period=30,
+        with fast_forward(juju):
+            juju.wait(
+                lambda status: jubilant.all_active(status, APP_NAME, "nginx-ingress-integrator"),
+                successes=30,
                 timeout=1200,
             )
-            exit_code, stdout, stderr = await ops_test.run(
-                "kubectl",
-                "-n",
-                "ingress-nginx",
-                "get",
-                "svc",
-                "ingress-nginx-controller",
-                "-o",
-                "jsonpath={.status.loadBalancer.ingress[0].ip}",
+            result = subprocess.run(
+                [
+                    "kubectl",
+                    "-n",
+                    "ingress-nginx",
+                    "get",
+                    "svc",
+                    "ingress-nginx-controller",
+                    "-o",
+                    "jsonpath={.status.loadBalancer.ingress[0].ip}",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
             )
-            ingress_ip = stdout.strip()
+            ingress_ip = result.stdout.strip()
 
             with unittest.mock.patch.multiple(socket, getaddrinfo=gen_patch_getaddrinfo(new_hostname, ingress_ip)):
                 response = requests.get(
@@ -155,64 +132,49 @@ class TestDeployment:
                 )
                 assert response.status_code == 200 and 'id="svelte"' in response.text.lower()
 
-    async def test_restart_action(self, ops_test: OpsTest):
+    def test_restart_action(self, juju: jubilant.Juju):
         """Test charm restart action."""
-        action = await ops_test.model.applications[APP_NAME].units[0].run_action("restart")
-        await action.wait()
+        juju.run(f"{APP_NAME}/0", "restart")
 
-        async with ops_test.fast_forward():
-            await ops_test.model.wait_for_idle(
-                apps=[APP_NAME],
-                status="active",
-                raise_on_blocked=False,
+        with fast_forward(juju):
+            juju.wait(
+                lambda status: jubilant.all_active(status, APP_NAME),
                 timeout=600,
             )
 
-            assert ops_test.model.applications[APP_NAME].units[0].workload_status == "active"
-
-    async def test_scaling_up(self, ops_test: OpsTest):
+    def test_scaling_up(self, juju: jubilant.Juju):
         """Scale Temporal worker charm up to 2 units."""
-        await scale(ops_test, app=APP_NAME, units=2)
+        scale(juju, app=APP_NAME, units=2)
 
-    async def test_host_info_relation(self, ops_test: OpsTest):
+    def test_host_info_relation(self, juju: jubilant.Juju):
         """Test that the server address from the host-info relation is used in charm config."""
-        status = await ops_test.model.get_status()  # noqa: F821
-        server_address = status["applications"][APP_NAME_SERVER]["units"][f"{APP_NAME_SERVER}/0"]["address"]
+        server_address = unit_status(juju, APP_NAME_SERVER).address
 
-        _, stdout, _ = await ops_test.juju(
-            "ssh",
-            "--container",
-            "temporal-ui",
+        stdout = juju.ssh(
             f"{APP_NAME}/0",
             "cat /home/ui-server/config/charm.yaml",
+            container="temporal-ui",
         )
         charm_config = yaml.safe_load(stdout)
         # FIXME: change port back to 7233 when canonical/temporal-k8s-operator#152 is resolved
         assert charm_config["temporalGrpcAddress"] == f"{server_address}:7236"
 
-    async def test_host_info_relation_removed_causes_blocked(self, ops_test: OpsTest):
+    def test_host_info_relation_removed_causes_blocked(self, juju: jubilant.Juju):
         """Test that removing the host-info relation causes the charm to go blocked."""
-        await ops_test.juju(
-            "remove-relation",
+        juju.remove_relation(
             f"{APP_NAME}:temporal-host-info",
             f"{APP_NAME_SERVER}:temporal-host-info",
         )
-        async with ops_test.fast_forward():
-            await ops_test.model.wait_for_idle(
-                apps=[APP_NAME],
-                status="blocked",
-                raise_on_blocked=False,
+        with fast_forward(juju):
+            juju.wait(
+                lambda status: jubilant.all_blocked(status, APP_NAME),
                 timeout=300,
             )
 
-        assert ops_test.model.applications[APP_NAME].units[0].workload_status == "blocked"
-
         # Re-integrate so subsequent tests still have an active charm.
-        await ops_test.model.integrate(f"{APP_NAME}:temporal-host-info", f"{APP_NAME_SERVER}:temporal-host-info")
-        async with ops_test.fast_forward():
-            await ops_test.model.wait_for_idle(
-                apps=[APP_NAME],
-                status="active",
-                raise_on_blocked=False,
+        juju.integrate(f"{APP_NAME}:temporal-host-info", f"{APP_NAME_SERVER}:temporal-host-info")
+        with fast_forward(juju):
+            juju.wait(
+                lambda status: jubilant.all_active(status, APP_NAME),
                 timeout=300,
             )
