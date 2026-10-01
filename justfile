@@ -21,6 +21,7 @@ unit:
 
 # Run integration tests
 integration *args:
+	charmcraft pack
 	uv tool run --with tox-uv tox -e integration -- {{args}}
 
 # Print system state to help debug a failed run

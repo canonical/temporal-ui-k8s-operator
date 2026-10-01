@@ -3,11 +3,22 @@
 
 """Fixtures for charm tests."""
 
-from typing import Generator
-
 import pytest
 
-_ABORTED_MODULES: dict[object, bool] = {}
+_ABORTED_MODULES: set[str] = set()
+
+
+def _item_module_name(item: pytest.Item) -> str | None:
+    """Return the test module name for a pytest item, if available.
+
+    Args:
+        item: test item.
+
+    Returns:
+        The module ``__name__``, or None if the item has no module.
+    """
+    module = getattr(item, "module", None)
+    return getattr(module, "__name__", None)
 
 
 def pytest_addoption(parser: pytest.Parser):
@@ -21,48 +32,38 @@ def pytest_addoption(parser: pytest.Parser):
 
 
 def pytest_configure(config: pytest.Config):
-    """Register repository-specific pytest markers.
+    """Register markers previously provided by pytest-operator.
 
     Args:
-        config: pytest configuration object.
+        config: pytest config object.
     """
     config.addinivalue_line(
         "markers",
-        "abort_on_fail: abort subsequent tests in this module after failure",
+        "abort_on_fail: xfail remaining tests in the module if a marked test fails",
     )
 
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
-def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[object]) -> Generator[None, None, None]:
-    """Record abort_on_fail failures for later tests in the same module.
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo):
+    """Record abort_on_fail after a marked test fails or errors.
 
     Args:
-        item: pytest test item.
-        call: pytest call information.
+        item: test item.
+        call: test call phase.
     """
     outcome = yield
-    assert outcome is not None
     report = outcome.get_result()
-    setattr(item, "rep_" + report.when, report)
-    failed = bool(getattr(item, "failed", False) or report.failed)
-    xfailed = bool(getattr(item, "xfailed", False) or getattr(report, "wasxfail", False))
-    setattr(item, "failed", failed)
-    setattr(item, "xfailed", xfailed)
-
-    abort_on_fail = item.get_closest_marker("abort_on_fail")
-    if abort_on_fail and abort_on_fail.kwargs.get("abort_on_xfail", False):
-        failed = failed or xfailed
-    module = getattr(item, "module", None)
-    if failed and abort_on_fail and module is not None:
-        _ABORTED_MODULES[module] = True
+    module_name = _item_module_name(item)
+    if report.failed and item.get_closest_marker("abort_on_fail") and module_name:
+        _ABORTED_MODULES.add(module_name)
 
 
 def pytest_runtest_setup(item: pytest.Item):
-    """Xfail remaining tests in a module after an abort_on_fail failure.
+    """Xfail remaining tests in a module after abort_on_fail.
 
     Args:
-        item: pytest test item.
+        item: test item.
     """
-    module = getattr(item, "module", None)
-    if module is not None and _ABORTED_MODULES.get(module):
-        pytest.xfail("aborted")
+    module_name = _item_module_name(item)
+    if module_name and module_name in _ABORTED_MODULES:
+        pytest.xfail("previous abort_on_fail test failed")
