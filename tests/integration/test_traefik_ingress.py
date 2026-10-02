@@ -4,21 +4,20 @@
 
 """Temporal UI charm integration tests."""
 
-import asyncio
 import json
 import logging
-from pathlib import Path
+import pathlib
 
+import jubilant
 import pytest
-import pytest_asyncio
 import requests
 import yaml
 from conftest import POSTGRESQL_K8S_CHANNEL, TEMPORAL_CHANNEL
-from pytest_operator.plugin import OpsTest
+from helpers import fast_forward
 
 logger = logging.getLogger(__name__)
 
-METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
+METADATA = yaml.safe_load(pathlib.Path("./metadata.yaml").read_text())
 APP_NAME = METADATA["name"]
 
 TEMPORAL_SERVER = "temporal-k8s"
@@ -30,34 +29,25 @@ TRAEFIK_K8S_CHANNEL = "latest/stable"
 TRAEFIK_K8S_TRUST = True
 
 
-@pytest_asyncio.fixture(name="deploy", scope="module")
-async def deploy(ops_test: OpsTest):
+@pytest.fixture(name="deploy", scope="module")
+def deploy(juju: jubilant.Juju, charm_path: pathlib.Path, charm_resources: dict[str, str]):
     """The app is up and running."""
-    # Deploy temporal server, temporal admin, traefik-k8s, and postgresql charms.
-    await asyncio.gather(
-        ops_test.model.deploy(TEMPORAL_SERVER, channel=TEMPORAL_CHANNEL, config={"num-history-shards": 1}),
-        ops_test.model.deploy(TEMPORAL_ADMIN, channel=TEMPORAL_CHANNEL),
-        ops_test.model.deploy(POSTGRESQL_K8S, channel=POSTGRESQL_K8S_CHANNEL, trust=POSTGRESQL_K8S_TRUST),
-        ops_test.model.deploy(TRAEFIK_K8S, channel=TRAEFIK_K8S_CHANNEL, trust=TRAEFIK_K8S_TRUST),
-    )
+    juju.deploy(TEMPORAL_SERVER, channel=TEMPORAL_CHANNEL, config={"num-history-shards": 1})
+    juju.deploy(TEMPORAL_ADMIN, channel=TEMPORAL_CHANNEL)
+    juju.deploy(POSTGRESQL_K8S, channel=POSTGRESQL_K8S_CHANNEL, trust=POSTGRESQL_K8S_TRUST)
+    juju.deploy(TRAEFIK_K8S, channel=TRAEFIK_K8S_CHANNEL, trust=TRAEFIK_K8S_TRUST)
+    juju.deploy(charm_path, app=APP_NAME, resources=charm_resources)
 
-    # Build and deploy temporal-ui-k8s
-    charm = await ops_test.build_charm(".")
-    resources = {"temporal-ui-image": METADATA["resources"]["temporal-ui-image"]["upstream-source"]}
-    await ops_test.model.deploy(charm, resources=resources, application_name=APP_NAME)
+    with fast_forward(juju):
+        juju.integrate(f"{TEMPORAL_SERVER}:db", f"{POSTGRESQL_K8S}:database")
+        juju.integrate(f"{TEMPORAL_SERVER}:visibility", f"{POSTGRESQL_K8S}:database")
+        juju.integrate(f"{TEMPORAL_SERVER}:admin", f"{TEMPORAL_ADMIN}:admin")
+        juju.integrate(f"{APP_NAME}:ui", f"{TEMPORAL_SERVER}:ui")
+        juju.integrate(f"{APP_NAME}:temporal-host-info", f"{TEMPORAL_SERVER}:temporal-host-info")
+        juju.integrate(f"{APP_NAME}:ingress", f"{TRAEFIK_K8S}:ingress")
 
-    # Add all required relations
-    async with ops_test.fast_forward():
-        await ops_test.model.integrate(f"{TEMPORAL_SERVER}:db", f"{POSTGRESQL_K8S}:database")
-        await ops_test.model.integrate(f"{TEMPORAL_SERVER}:visibility", f"{POSTGRESQL_K8S}:database")
-        await ops_test.model.integrate(f"{TEMPORAL_SERVER}:admin", f"{TEMPORAL_ADMIN}:admin")
-        await ops_test.model.integrate(f"{APP_NAME}:ui", f"{TEMPORAL_SERVER}:ui")
-        await ops_test.model.integrate(f"{APP_NAME}:temporal-host-info", f"{TEMPORAL_SERVER}:temporal-host-info")
-        await ops_test.model.integrate(f"{APP_NAME}:ingress", f"{TRAEFIK_K8S}:ingress")
-
-        await ops_test.model.wait_for_idle(
-            status="active",
-            raise_on_blocked=False,
+        juju.wait(
+            jubilant.all_active,
             timeout=90 * 10,
         )
 
@@ -67,14 +57,9 @@ async def deploy(ops_test: OpsTest):
 class TestDeployment:
     """Integration tests for Temporal UI charm as a requirer of ingress."""
 
-    async def test_ingress(self, ops_test: OpsTest):
+    def test_ingress(self, juju: jubilant.Juju):
         """Test connectivity through ingress."""
-        traefik_app = ops_test.model.applications.get(TRAEFIK_K8S)
-        show_proxified_endpoints = await traefik_app.units[0].run_action("show-proxied-endpoints")
-        await show_proxified_endpoints.wait()
-
-        endpoint = (
-            json.loads(show_proxified_endpoints.results.get("proxied-endpoints")).get("temporal-ui-k8s").get("url")
-        )
+        task = juju.run(f"{TRAEFIK_K8S}/0", "show-proxied-endpoints")
+        endpoint = json.loads(task.results.get("proxied-endpoints")).get("temporal-ui-k8s").get("url")
 
         assert requests.get(f"{endpoint}/-/ready", timeout=10).status_code == 200

@@ -7,9 +7,7 @@ import pathlib
 
 import jubilant
 import pytest
-import pytest_asyncio
 import yaml
-from pytest_operator.plugin import OpsTest
 
 POSTGRESQL_K8S_CHANNEL = "14/stable"
 
@@ -24,18 +22,14 @@ METADATA = yaml.safe_load(pathlib.Path("./metadata.yaml").read_text())
 TEMPORAL_UI_IMAGE = METADATA["resources"]["temporal-ui-image"]["upstream-source"]
 
 
-@pytest.fixture(scope="module")
-def juju(request: pytest.FixtureRequest):
-    keep_models = bool(request.config.getoption("--keep-models"))
+@pytest.fixture(scope="module", autouse=True)
+def configure_juju(juju: jubilant.Juju):
+    """Set wait timeout to match python-libjuju's 10-minute default.
 
-    with jubilant.temp_model(keep=keep_models) as model:
-        model.wait_timeout = 10 * 60
-
-        yield model
-
-        if request.session.testsfailed:
-            log = model.debug_log(limit=1000)
-            print(log, end="")
+    Args:
+        juju: pytest-jubilant Juju client bound to the test model.
+    """
+    juju.wait_timeout = 10 * 60
 
 
 def deploy_temporal_stack(
@@ -124,30 +118,44 @@ def ui_latest_track(juju: jubilant.Juju):
     temporal-host-info is integrated during deployment because the latest supported
     release already requires the relation, so the charm would otherwise stay blocked.
     The refresh test then upgrades this deployment to the newer, locally built charm.
+
+    Args:
+        juju: pytest-jubilant Juju client bound to the test model.
+
+    Returns:
+        Application name of the deployed temporal-ui-k8s charm.
     """
     deploy_temporal_stack(juju, temporal_ui_channel=TEMPORAL_UI_LATEST_RELEASE_CHANNEL)
 
     return "temporal-ui-k8s"
 
 
-@pytest_asyncio.fixture(scope="module")
-async def charm_path(request: pytest.FixtureRequest, ops_test: OpsTest) -> str | pathlib.Path:
-    """Build (or locate via --charm-file) the ui-k8s charm and return its path.
+@pytest.fixture(scope="session")
+def charm_path(request: pytest.FixtureRequest) -> pathlib.Path:
+    """Return the path of the packed ui-k8s charm under test.
 
-    Uses pytest-operator's build_charm so the artifact is managed the same way as
-    the rest of the integration suite. Relying on a pre-packed charm in the project
-    root or build/ does not work: pytest-operator's build_charm relocates root
-    *.charm files and deletes the build/ directory.
+    Args:
+        request: pytest fixture request used to read --charm-file.
+
+    Returns:
+        Absolute path to the packed charm file.
     """
-    if charms := request.config.getoption("--charm-file"):
-        return charms[0]
-    charm = await ops_test.build_charm(".")
-    assert charm, "Charm not built"
+    charm_files = request.config.getoption("--charm-file")
+    if charm_files:
+        assert len(charm_files) == 1, f"Expected one charm file, found {charm_files}"
+        charm = pathlib.Path(charm_files[0]).resolve()
+    else:
+        charms = list(pathlib.Path().glob("*.charm"))
+        assert charms, "No packed charm found"
+        assert len(charms) == 1, f"Found multiple charms: {charms}"
+        charm = charms[0].resolve()
+
+    assert charm.is_file(), f"{charm} is not a file"
     return charm
 
 
 @pytest.fixture(scope="module")
-def charm_resources() -> dict:
+def charm_resources() -> dict[str, str]:
     """Resources to deploy the ui-k8s locally built charm."""
     return {
         "temporal-ui-image": TEMPORAL_UI_IMAGE,
