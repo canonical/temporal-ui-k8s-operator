@@ -15,7 +15,13 @@ import pytest
 import requests
 import yaml
 from conftest import POSTGRESQL_K8S_CHANNEL, TEMPORAL_CHANNEL
-from helpers import fast_forward, gen_patch_getaddrinfo, scale, unit_status
+from helpers import (
+    fast_forward,
+    gen_patch_getaddrinfo,
+    host_info_app_data,
+    scale,
+    unit_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +32,8 @@ APP_NAME_SERVER = "temporal-k8s"
 APP_NAME_ADMIN = "temporal-admin-k8s"
 
 NGINX_INGRESS_INTEGRATOR_CHANNEL = "latest/edge"
+SELF_SIGNED_CERTIFICATES_CHANNEL = "1/stable"
+TEMPORAL_FRONTEND_PORT = "7233"
 
 
 @pytest.fixture(name="deploy", scope="module")
@@ -148,16 +156,22 @@ class TestDeployment:
 
     def test_host_info_relation(self, juju: jubilant.Juju):
         """Test that the server address from the host-info relation is used in charm config."""
-        server_address = unit_status(juju, APP_NAME_SERVER).address
+        host_info = host_info_app_data(juju, APP_NAME)
 
-        stdout = juju.ssh(
-            f"{APP_NAME}/0",
-            "cat /home/ui-server/config/charm.yaml",
-            container="temporal-ui",
+        charm_config = yaml.safe_load(
+            juju.ssh(f"{APP_NAME}/0", "cat /home/ui-server/config/charm.yaml", container="temporal-ui")
         )
-        charm_config = yaml.safe_load(stdout)
-        # FIXME: change port back to 7233 when canonical/temporal-k8s-operator#152 is resolved
-        assert charm_config["temporalGrpcAddress"] == f"{server_address}:7236"
+        assert charm_config["temporalGrpcAddress"] == f"{host_info['host']}:{host_info['port']}"
+
+    def test_namespaces_api(self, juju: jubilant.Juju):
+        """Test the UI reaches the Temporal frontend over plaintext gRPC.
+
+        `GET /api/v1/namespaces` makes the UI server dial the frontend, so it
+        fails with HTTP 503 when the UI can't talk to it.
+        """
+        url = f"http://{unit_status(juju, APP_NAME).address}:8080/api/v1/namespaces"
+        response = requests.get(url, timeout=60)
+        assert response.status_code == 200, response.text
 
     def test_host_info_relation_removed_causes_blocked(self, juju: jubilant.Juju):
         """Test that removing the host-info relation causes the charm to go blocked."""
@@ -178,3 +192,43 @@ class TestDeployment:
                 lambda status: jubilant.all_active(status, APP_NAME),
                 timeout=300,
             )
+
+    def test_tls_frontend(self, juju: jubilant.Juju):
+        """Test the UI reaches a TLS frontend once it has the frontend's CA.
+
+        This is the repro from canonical/temporal-k8s-operator#152: with frontend
+        certificates related, a UI that dials plaintext gets HTTP 503 from
+        `GET /api/v1/namespaces`. It needs a temporal-k8s that publishes the
+        frontend port and its TLS state over temporal-host-info, so it is
+        skipped against releases that still publish internal-frontend.
+        """
+        if host_info_app_data(juju, APP_NAME).get("port") != TEMPORAL_FRONTEND_PORT:
+            pytest.skip(
+                "temporal-k8s on this channel does not publish the frontend over temporal-host-info "
+                "yet (canonical/temporal-k8s-operator#152)"
+            )
+
+        juju.deploy("self-signed-certificates", channel=SELF_SIGNED_CERTIFICATES_CHANNEL)
+        juju.integrate(f"{APP_NAME_SERVER}:frontend-certificates", "self-signed-certificates:certificates")
+
+        # The frontend now serves TLS; without the CA the UI must block rather
+        # than keep dialling plaintext.
+        with fast_forward(juju):
+            juju.wait(
+                lambda status: jubilant.all_blocked(status, APP_NAME)
+                and host_info_app_data(juju, APP_NAME).get("tls") == "true",
+                timeout=900,
+            )
+
+        juju.integrate(f"{APP_NAME}:receive-ca-cert", "self-signed-certificates:send-ca-cert")
+        with fast_forward(juju):
+            juju.wait(lambda status: jubilant.all_active(status, APP_NAME), timeout=600)
+
+        charm_config = yaml.safe_load(
+            juju.ssh(f"{APP_NAME}/0", "cat /home/ui-server/config/charm.yaml", container="temporal-ui")
+        )
+        assert charm_config["tls"]["enableHostVerification"] is True
+
+        url = f"http://{unit_status(juju, APP_NAME).address}:8080/api/v1/namespaces"
+        response = requests.get(url, timeout=60)
+        assert response.status_code == 200, response.text
