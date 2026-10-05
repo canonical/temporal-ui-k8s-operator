@@ -16,7 +16,7 @@ def test_refresh_from_latest_to_1_23(juju: jubilant.Juju, ui_latest_track, charm
         ui_latest_track,
         path=charm_path,
         resources=charm_resources,
-        base="ubuntu@24.04",
+        base="ubuntu@26.04",
     )
 
     # temporal-host-info is already integrated by the ui_latest_track fixture, so the
