@@ -72,21 +72,21 @@ def deploy_temporal_stack(
         config={
             "num-history-shards": 1,
         },
-        base="ubuntu@24.04",
+        base="ubuntu@26.04",
     )
 
     juju.deploy(
         charm="temporal-admin-k8s",
         app="temporal-admin-k8s",
         channel=temporal_admin_channel,
-        base="ubuntu@24.04",
+        base="ubuntu@26.04",
     )
 
     juju.deploy(
         charm="temporal-ui-k8s",
         app="temporal-ui-k8s",
         channel=temporal_ui_channel,
-        base="ubuntu@24.04",
+        base="ubuntu@26.04",
     )
 
     juju.wait(
