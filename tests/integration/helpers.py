@@ -6,6 +6,7 @@
 """Temporal UI charm integration test helpers."""
 
 import contextlib
+import json
 import logging
 import socket
 from collections.abc import Generator
@@ -90,3 +91,20 @@ def scale(juju: jubilant.Juju, app: str, units: int):
             successes=30,
         )
         assert len(juju.status().apps[app].units) == units
+
+
+def host_info_app_data(juju: jubilant.Juju, app: str) -> dict[str, str]:
+    """Return what the temporal-host-info provider publishes to the given requirer.
+
+    Args:
+        juju: Jubilant Juju client bound to the test model.
+        app: Requirer application whose first unit's view is read.
+    Returns:
+        The provider's application databag on the temporal-host-info relation.
+    """
+    unit = f"{app}/0"
+    show_unit = json.loads(juju.cli("show-unit", unit, "--format", "json"))
+    for relation in show_unit[unit]["relation-info"]:
+        if relation["endpoint"] == "temporal-host-info":
+            return relation["application-data"]
+    raise AssertionError(f"{unit} has no temporal-host-info relation")

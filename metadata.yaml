@@ -48,6 +48,14 @@ requires:
   temporal-host-info:
     interface: temporal-host-info
     limit: 1
+  receive-ca-cert:
+    interface: certificate_transfer
+    limit: 1
+    optional: true
+    description: |
+      Receives the CA that issued the Temporal frontend's certificate, so the UI can
+      verify the frontend when it serves gRPC over TLS. Integrate it with the same
+      certificates provider that issues the frontend certificate.
 
 containers:
   temporal-ui:

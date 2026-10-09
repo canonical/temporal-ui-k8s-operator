@@ -129,6 +129,15 @@ def host_info_relation():
 
 
 @pytest.fixture(scope="function")
+def tls_host_info_relation():
+    """Provider app data for temporal-host-info when the frontend serves gRPC over TLS."""
+    return ops.testing.Relation(
+        "temporal-host-info",
+        remote_app_data={"host": "temporal-k8s.test.svc.cluster.local", "port": "7233", "tls": "true"},
+    )
+
+
+@pytest.fixture(scope="function")
 def nginx_relation():
     return ops.testing.Relation("nginx-route")
 
