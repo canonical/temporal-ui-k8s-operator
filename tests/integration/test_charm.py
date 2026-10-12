@@ -33,7 +33,6 @@ APP_NAME_ADMIN = "temporal-admin-k8s"
 
 NGINX_INGRESS_INTEGRATOR_CHANNEL = "latest/edge"
 SELF_SIGNED_CERTIFICATES_CHANNEL = "1/stable"
-TEMPORAL_FRONTEND_PORT = "7233"
 
 
 @pytest.fixture(name="deploy", scope="module")
@@ -199,15 +198,10 @@ class TestDeployment:
         This is the repro from canonical/temporal-k8s-operator#152: with frontend
         certificates related, a UI that dials plaintext gets HTTP 503 from
         `GET /api/v1/namespaces`. It needs a temporal-k8s that publishes the
-        frontend port and its TLS state over temporal-host-info, so it is
-        skipped against releases that still publish internal-frontend.
+        frontend port and its TLS state over temporal-host-info (released with
+        canonical/temporal-k8s-operator#152), so it fails until that release is
+        on TEMPORAL_CHANNEL.
         """
-        if host_info_app_data(juju, APP_NAME).get("port") != TEMPORAL_FRONTEND_PORT:
-            pytest.skip(
-                "temporal-k8s on this channel does not publish the frontend over temporal-host-info "
-                "yet (canonical/temporal-k8s-operator#152)"
-            )
-
         juju.deploy("self-signed-certificates", channel=SELF_SIGNED_CERTIFICATES_CHANNEL)
         juju.integrate(f"{APP_NAME_SERVER}:frontend-certificates", "self-signed-certificates:certificates")
 
