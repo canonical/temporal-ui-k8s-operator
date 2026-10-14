@@ -13,7 +13,7 @@ concurrency:
 jobs:
   lib-check:
     name: Check libraries
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: write
@@ -34,7 +34,7 @@ jobs:
           
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -50,7 +50,7 @@ jobs:
 
   unit-tests:
     name: Unit tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -66,7 +66,7 @@ jobs:
 
   integration-tests:
     name: Integration tests
-    runs-on: [self-hosted, linux, X64, large, noble]
+    runs-on: [self-hosted-linux-amd64-resolute-large]
     timeout-minutes: 60
     strategy:
       fail-fast: false
