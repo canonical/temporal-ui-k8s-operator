@@ -33,13 +33,16 @@ APP_NAME_ADMIN = "temporal-admin-k8s"
 
 NGINX_INGRESS_INTEGRATOR_CHANNEL = "latest/edge"
 SELF_SIGNED_CERTIFICATES_CHANNEL = "1/stable"
+# TEMPORAL_CHANNEL carries revisions for more than one base, and without a base
+# Juju picks the older one. Pin the base the current revisions are built for.
+TEMPORAL_BASE = "ubuntu@26.04"
 
 
 @pytest.fixture(name="deploy", scope="module")
 def deploy(juju: jubilant.Juju, charm_path: pathlib.Path, charm_resources: dict[str, str]):
     """The app is up and running."""
-    juju.deploy(APP_NAME_SERVER, channel=TEMPORAL_CHANNEL, config={"num-history-shards": 1})
-    juju.deploy(APP_NAME_ADMIN, channel=TEMPORAL_CHANNEL)
+    juju.deploy(APP_NAME_SERVER, channel=TEMPORAL_CHANNEL, base=TEMPORAL_BASE, config={"num-history-shards": 1})
+    juju.deploy(APP_NAME_ADMIN, channel=TEMPORAL_CHANNEL, base=TEMPORAL_BASE)
     juju.deploy("postgresql-k8s", channel=POSTGRESQL_K8S_CHANNEL, trust=True)
     juju.deploy(
         "nginx-ingress-integrator",
