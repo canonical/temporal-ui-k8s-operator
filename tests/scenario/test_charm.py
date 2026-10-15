@@ -2,6 +2,7 @@
 # See LICENSE file for licensing details.
 
 import dataclasses
+import json
 import logging
 import unittest.mock
 
@@ -366,3 +367,162 @@ def test_traefik_ingress_ready(
 
     assert state_out.unit_status == ops.MaintenanceStatus("replanning application")
     assert state_out.get_container("temporal-ui").service_statuses["temporal-ui"] == ops.pebble.ServiceStatus.ACTIVE
+
+
+CA_1 = "-----BEGIN CERTIFICATE-----\nCA-ONE\n-----END CERTIFICATE-----"
+CA_2 = "-----BEGIN CERTIFICATE-----\nCA-TWO\n-----END CERTIFICATE-----"
+CA_PATH = "/home/ui-server/certs/ca.pem"
+CONFIG_PATH = "/home/ui-server/config/charm.yaml"
+
+
+def make_ca_relation(*certificates):
+    """Return a receive-ca-cert relation carrying the given CA certificates.
+
+    Args:
+        certificates: PEM-encoded CA certificates published by the provider.
+
+    Returns:
+        The relation, with the certificates in the provider's app databag.
+    """
+    return ops.testing.Relation(
+        "receive-ca-cert",
+        remote_app_data={"certificates": json.dumps(list(certificates))},
+    )
+
+
+def _tls_state(state, peer_relation, ui_relation, tls_host_info_relation, *extra_relations):
+    """Return a state whose temporal-host-info provider reports a TLS frontend.
+
+    Args:
+        state: The base state.
+        peer_relation: The peer relation.
+        ui_relation: The ui:temporal relation.
+        tls_host_info_relation: A temporal-host-info relation reporting tls=true.
+        extra_relations: Any further relations to include.
+
+    Returns:
+        The state with those relations.
+    """
+    return dataclasses.replace(state, relations=[peer_relation, ui_relation, tls_host_info_relation, *extra_relations])
+
+
+def _read(context, state_out, path):
+    """Read a file the charm pushed into the temporal-ui container.
+
+    Args:
+        context: The scenario context the charm ran in.
+        state_out: The state after the charm ran.
+        path: Absolute path of the file in the container.
+
+    Returns:
+        The file's contents.
+    """
+    root = state_out.get_container("temporal-ui").get_filesystem(context)
+    return (root / path.lstrip("/")).read_text()
+
+
+def test_plaintext_frontend_has_no_tls_config(
+    context, state, temporal_ui_container, temporal_ui_container_initialized, ui_relation
+):
+    # Without the tls signal the UI keeps dialling plaintext: no tls block and
+    # no TLS settings in the environment.
+    state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
+    state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
+    state_out = context.run(context.on.relation_changed(ui_relation), state_out)
+
+    environment = state_out.get_container("temporal-ui").plan.services["temporal-ui"].environment
+    assert "TEMPORAL_TLS_CA" not in environment
+    assert "tls:" not in _read(context, state_out, CONFIG_PATH)
+
+
+def test_tls_frontend_without_ca_blocks(
+    context, state, temporal_ui_container, peer_relation, ui_relation, tls_host_info_relation
+):
+    # A TLS frontend can't be verified without its CA, so the charm blocks with
+    # an actionable message instead of starting a UI that can't connect.
+    state = _tls_state(state, peer_relation, ui_relation, tls_host_info_relation)
+
+    state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
+
+    assert state_out.unit_status == ops.BlockedStatus(
+        "Temporal frontend uses TLS: integrate receive-ca-cert with its CA"
+    )
+
+
+def test_tls_frontend_with_ca_configures_ui(
+    context,
+    state,
+    temporal_ui_container,
+    temporal_ui_container_initialized,
+    peer_relation,
+    ui_relation,
+    tls_host_info_relation,
+):
+    ca_relation = make_ca_relation(CA_1)
+    state = _tls_state(state, peer_relation, ui_relation, tls_host_info_relation, ca_relation)
+
+    state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
+    state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
+    state_out = context.run(context.on.relation_changed(ui_relation), state_out)
+
+    environment = state_out.get_container("temporal-ui").plan.services["temporal-ui"].environment
+    assert environment["TEMPORAL_ADDRESS"] == "temporal-k8s.test.svc.cluster.local:7233"
+    assert environment["TEMPORAL_TLS_CA"] == CA_PATH
+    assert environment["TEMPORAL_TLS_ENABLE_HOST_VERIFICATION"] == "true"
+    assert _read(context, state_out, CA_PATH) == CA_1
+    config = _read(context, state_out, CONFIG_PATH)
+    assert f"tls:\n  caFile: {CA_PATH}\n  enableHostVerification: true\n" in config
+
+
+def test_ca_rotation_restarts_ui(
+    context,
+    state,
+    temporal_ui_container,
+    temporal_ui_container_initialized,
+    peer_relation,
+    ui_relation,
+    tls_host_info_relation,
+):
+    # The CA path never changes, so a rotated CA must change the environment
+    # (via its hash) for Pebble to restart ui-server, which reads it only at
+    # startup.
+    def ca_hash(*certificates):
+        """Run the charm with the given CA certificates and return the bundle hash.
+
+        Args:
+            certificates: PEM-encoded CA certificates published by the provider.
+
+        Returns:
+            The TEMPORAL_TLS_CA_HASH value from the Pebble environment.
+        """
+        ca_relation = make_ca_relation(*certificates)
+        tls_state = _tls_state(state, peer_relation, ui_relation, tls_host_info_relation, ca_relation)
+        state_out = context.run(context.on.pebble_ready(temporal_ui_container), tls_state)
+        state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
+        state_out = context.run(context.on.relation_changed(ui_relation), state_out)
+        return state_out.get_container("temporal-ui").plan.services["temporal-ui"].environment["TEMPORAL_TLS_CA_HASH"]
+
+    assert ca_hash(CA_1) != ca_hash(CA_2)
+    # The library returns an unordered set; the bundle must not depend on it.
+    assert ca_hash(CA_1, CA_2) == ca_hash(CA_2, CA_1)
+
+
+def test_ca_removed_blocks(
+    context,
+    state,
+    temporal_ui_container,
+    temporal_ui_container_initialized,
+    peer_relation,
+    ui_relation,
+    tls_host_info_relation,
+):
+    ca_relation = make_ca_relation(CA_1)
+    state = _tls_state(state, peer_relation, ui_relation, tls_host_info_relation, ca_relation)
+    state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
+    state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
+
+    state_out = context.run(context.on.relation_broken(ca_relation), state_out)
+
+    assert state_out.unit_status == ops.BlockedStatus(
+        "Temporal frontend uses TLS: integrate receive-ca-cert with its CA"
+    )

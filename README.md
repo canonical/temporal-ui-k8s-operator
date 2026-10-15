@@ -30,6 +30,21 @@ for usage instructions.
 
 `server-name` is deprecated and will be removed in a future release. Prefer integrating `temporal-host-info` relation instead of relying on config fallback.
 
+### Frontend TLS
+
+When the Temporal server's frontend serves gRPC over TLS (its `frontend-certificates`
+relation is integrated), the server tells the UI over `temporal-host-info`, and the UI
+dials the frontend over TLS. To verify the frontend's certificate, the UI needs the CA
+that issued it. Integrate `receive-ca-cert` with the same certificates provider that
+issues the frontend certificate:
+
+```bash
+juju integrate temporal-ui-k8s:receive-ca-cert self-signed-certificates:send-ca-cert
+```
+
+Until the CA is available, the UI is blocked. Without frontend TLS, the relation isn't
+needed and the UI dials the frontend in plaintext.
+
 ## Contributing
 
 This charm is still in active development. Please see the

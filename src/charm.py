@@ -6,9 +6,13 @@
 
 """Charm definition and helpers."""
 
+import hashlib
 import logging
 import os
 
+from charms.certificate_transfer_interface.v1.certificate_transfer import (
+    CertificateTransferRequires,
+)
 from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
 from charms.temporal_k8s.v0.temporal_host_info import TemporalHostInfoRequirer
 from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
@@ -22,6 +26,8 @@ from log import log_event_handler
 from state import State
 
 REQUIRED_AUTH_PARAMETERS = ["auth-provider-url", "auth-client-id", "auth-client-secret", "auth-scopes"]
+RECEIVE_CA_CERT_RELATION_NAME = "receive-ca-cert"
+CA_CERT_PATH = "/home/ui-server/certs/ca.pem"
 WORKLOAD_VERSION = "2.27.1"
 
 # Log messages can be retrieved using juju debug-log
@@ -96,6 +102,22 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         self.host_info = TemporalHostInfoRequirer(self)
         self.framework.observe(self.host_info.on.temporal_host_info_changed, self._update)
         self.framework.observe(self.host_info.on.temporal_host_info_unavailable, self._update)
+
+        # The CA that issued the frontend certificate, used to verify the
+        # frontend when it serves gRPC over TLS. It comes straight from the
+        # certificates provider, not from the Temporal server charm.
+        self.ca_transfer = CertificateTransferRequires(self, RECEIVE_CA_CERT_RELATION_NAME)
+        self.framework.observe(self.ca_transfer.on.certificate_set_updated, self._update)
+        self.framework.observe(self.ca_transfer.on.certificates_removed, self._update)
+
+    @property
+    def _ca_bundle(self) -> str:
+        """Return the CA bundle received over certificate_transfer, or an empty string.
+
+        The library returns an unordered set; sorting keeps the bundle, and so
+        its hash in the Pebble environment, stable across hooks.
+        """
+        return "\n".join(sorted(cert.strip() for cert in self.ca_transfer.get_all_certificates()))
 
     def _require_nginx_route(self):
         """Require nginx-route relation based on current configuration."""
@@ -292,6 +314,7 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             raise ValueError("ui:temporal relation: server is not ready")
         if not (self.host_info.host and self.host_info.port):
             raise ValueError("temporal-host-info relation not established")
+        self._validate_tls()
         if self.model.relations.get("ingress") and self.model.relations.get("nginx-route"):
             raise ValueError("Only one ingress solution is allowed - remove the ingress or the nginx-route relation")
 
@@ -302,6 +325,15 @@ class TemporalUiK8SOperatorCharm(CharmBase):
 
             if not self.model.relations.get("nginx-route") and not self.model.relations.get("ingress"):
                 raise ValueError("Invalid config: auth cannot work without ingress relation")
+
+    def _validate_tls(self):
+        """Validate that the UI can verify the Temporal frontend when it serves TLS.
+
+        Raises:
+            ValueError: if the frontend serves TLS and no CA has been received.
+        """
+        if self.host_info.tls and not self._ca_bundle:
+            raise ValueError(f"Temporal frontend uses TLS: integrate {RECEIVE_CA_CERT_RELATION_NAME} with its CA")
 
     @log_event_handler(logger)
     def _update(self, event):
@@ -369,6 +401,22 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             return
 
         context["TEMPORAL_ADDRESS"] = f"{self.host_info.host}:{self.host_info.port}"
+
+        if self.host_info.tls:
+            # ui-server reads the CA file only at startup, and the path never
+            # changes, so the bundle's hash goes into the Pebble environment:
+            # a rotated CA then changes the layer and restarts the service.
+            ca_bundle = self._ca_bundle
+            container.push(CA_CERT_PATH, ca_bundle, make_dirs=True)
+            context.update(
+                {
+                    "TEMPORAL_TLS_CA": CA_CERT_PATH,
+                    "TEMPORAL_TLS_CA_HASH": hashlib.sha256(ca_bundle.encode()).hexdigest(),
+                    # Without host verification ui-server skips certificate
+                    # verification entirely, CA included.
+                    "TEMPORAL_TLS_ENABLE_HOST_VERIFICATION": "true",
+                }
+            )
 
         config = render("config.jinja", context)
         container.push("/home/ui-server/config/charm.yaml", config, make_dirs=True)

@@ -13,5 +13,6 @@ output "requires" {
     ingress            = "ingress"
     nginx_route        = "nginx-route"
     temporal_host_info = "temporal-host-info"
+    receive_ca_cert    = "receive-ca-cert"
   }
 }
