@@ -65,7 +65,4 @@ resources:
   temporal-ui-image:
     type: oci-image
     description: OCI image for Temporal UI
-    # FIXME: this image comes from the temporal-rock ghcr registry
-    # and its purpose is solely to speed up the release of 1.31/edge
-    # Must be changed to the one from the canonical Docker for 1.31/stable
-    upstream-source: ghcr.io/canonical/temporal-rocks/temporal-ui:2.52
+    upstream-source: ubuntu/temporal-ui:2.52-26.04_edge
