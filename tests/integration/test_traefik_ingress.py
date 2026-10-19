@@ -12,7 +12,12 @@ import jubilant
 import pytest
 import requests
 import yaml
-from conftest import POSTGRESQL_K8S_CHANNEL, TEMPORAL_CHANNEL
+from conftest import (
+    POSTGRESQL_FORCE,
+    POSTGRESQL_K8S_CHANNEL,
+    TEMPORAL_BASE,
+    TEMPORAL_CHANNEL,
+)
 from helpers import fast_forward
 
 logger = logging.getLogger(__name__)
@@ -32,9 +37,9 @@ TRAEFIK_K8S_TRUST = True
 @pytest.fixture(name="deploy", scope="module")
 def deploy(juju: jubilant.Juju, charm_path: pathlib.Path, charm_resources: dict[str, str]):
     """The app is up and running."""
-    juju.deploy(TEMPORAL_SERVER, channel=TEMPORAL_CHANNEL, config={"num-history-shards": 1})
-    juju.deploy(TEMPORAL_ADMIN, channel=TEMPORAL_CHANNEL)
-    juju.deploy(POSTGRESQL_K8S, channel=POSTGRESQL_K8S_CHANNEL, trust=POSTGRESQL_K8S_TRUST)
+    juju.deploy(TEMPORAL_SERVER, channel=TEMPORAL_CHANNEL, base=TEMPORAL_BASE, config={"num-history-shards": 1})
+    juju.deploy(TEMPORAL_ADMIN, channel=TEMPORAL_CHANNEL, base=TEMPORAL_BASE)
+    juju.deploy(POSTGRESQL_K8S, channel=POSTGRESQL_K8S_CHANNEL, trust=POSTGRESQL_K8S_TRUST, force=POSTGRESQL_FORCE)
     juju.deploy(TRAEFIK_K8S, channel=TRAEFIK_K8S_CHANNEL, trust=TRAEFIK_K8S_TRUST)
     juju.deploy(charm_path, app=APP_NAME, resources=charm_resources)
 
