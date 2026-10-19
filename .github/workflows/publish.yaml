@@ -1,0 +1,38 @@
+name: Publish charm
+
+on:
+  push:
+    branches:
+      - track/**
+
+jobs:
+  tests:
+    name: Release tests
+    uses: ./.github/workflows/tests.yaml
+    secrets: inherit
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+  publish:
+    name: 'Publish charm to edge | amd64'
+    # The charm is built on the runner and targets Ubuntu 24.04.
+    runs-on: ubuntu-24.04
+    needs:
+      - tests
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Upload charm package
+        uses: canonical/charming-actions/upload-charm@2.7.0
+        with:
+          credentials: ${{ secrets.CHARMHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          channel: 1.23/edge
+          tag-prefix: temporal-ui-k8s
+          charmcraft-channel: 4.x/stable
