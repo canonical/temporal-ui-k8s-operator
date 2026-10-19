@@ -288,7 +288,7 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         ui_relations = self.model.relations["ui"]
         if not ui_relations:
             raise ValueError("ui:temporal relation: not available")
-        if not self._state.server_status == "ready":
+        if self._state.server_status != "ready":
             raise ValueError("ui:temporal relation: server is not ready")
         if not (self.host_info.host and self.host_info.port):
             raise ValueError("temporal-host-info relation not established")
