@@ -47,9 +47,9 @@ def deploy_temporal_stack(
         temporal_server_channel: channel for temporal-k8s
         temporal_admin_channel: channel for temporal-admin-k8s
         temporal_ui_channel: channel for temporal-ui-k8s
-        integrate_host_info: whether to integrate the temporal-host-info relation.
-            Set to False when deploying temporal-ui-k8s from latest/edge (pre-dates
-            the relation); the test is responsible for integrating after refresh.
+        integrate_host_info: Whether to integrate the temporal-host-info relation.
+        Set to False when deploying a legacy UI charm revision that predates
+        the relation.
     """
     juju.model_config(
         values={
@@ -109,18 +109,6 @@ def deploy_temporal_stack(
         )
 
     juju.wait(jubilant.all_active)
-
-
-@pytest.fixture(scope="module")
-def ui_latest_track(juju: jubilant.Juju):
-    """Deploy the temporal stack with temporal-ui from the latest/edge track.
-
-    temporal-host-info is not integrated here because the latest/edge revision
-    pre-dates that relation. The refresh test integrates it after refreshing to 1.23+.
-    """
-    deploy_temporal_stack(juju, temporal_ui_channel="latest/edge", integrate_host_info=False)
-
-    return "temporal-ui-k8s"
 
 
 @pytest.fixture(scope="module")
