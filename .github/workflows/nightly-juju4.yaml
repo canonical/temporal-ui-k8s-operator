@@ -1,0 +1,54 @@
+# Copyright 2026 Canonical Ltd.
+# See LICENSE file for licensing details.
+
+# Nightly integration tests against Juju 4.x via the team's shared reusable
+# workflow. Each test command gets its own runner provisioned by concierge.
+# Scheduled failures open/update one issue labelled `juju-4`.
+
+name: Juju 4.x Tests
+
+on:
+  schedule:
+    # Run at 03:32 UTC every day
+    - cron: '32 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  integration:
+    name: Integration tests [juju 4.x]
+    uses: canonical/workflows-team/.github/workflows/juju-nightly.yaml@main
+    with:
+      juju-channel: "4.1/edge"
+      # Matches the runner label used by tests.yaml.
+      runner: self-hosted-linux-amd64-resolute-large
+      timeout-minutes: 120
+      # charmcraft pinned via name/channel: the k8s preset installs it at the
+      # default channel first, then the extra snap refreshes it to 4.x/stable.
+      extra-snaps: "charmcraft/4.x/stable,astral-uv,just,kubectl"
+      # 16/stable supports Juju 4; --force bypasses the base check until
+      # postgresql-k8s declares Juju 4 support.
+      extra-env: '{"POSTGRESQL_CHANNEL": "16/stable", "POSTGRESQL_FORCE": "true"}'
+      test-commands: >-
+        ["just integration tests/integration/test_refresh.py",
+        "just integration tests/integration/test_traefik_ingress.py"]
+      issue-label: juju-4
+
+  # test_charm.py exercises nginx-route, so its runners need the ingress-nginx
+  # controller installed by .github/scripts/init-pytest-ui.sh (the same setup
+  # tests.yaml runs before every integration job).
+  nginx-ingress:
+    name: Nginx ingress integration test [juju 4.x]
+    uses: canonical/workflows-team/.github/workflows/juju-nightly.yaml@main
+    with:
+      juju-channel: "4.1/edge"
+      runner: self-hosted-linux-amd64-resolute-large
+      timeout-minutes: 120
+      extra-snaps: "charmcraft/4.x/stable,astral-uv,just,kubectl"
+      extra-env: '{"POSTGRESQL_CHANNEL": "16/stable", "POSTGRESQL_FORCE": "true"}'
+      setup-command: bash .github/scripts/init-pytest-ui.sh
+      test-commands: '["just integration tests/integration/test_charm.py"]'
+      issue-label: juju-4
