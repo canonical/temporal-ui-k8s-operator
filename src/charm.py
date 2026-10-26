@@ -7,6 +7,7 @@
 """Charm definition and helpers."""
 
 import hashlib
+import json
 import logging
 import os
 
@@ -15,23 +16,70 @@ from charms.certificate_transfer_interface.v1.certificate_transfer import (
 )
 from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
 from charms.temporal_k8s.v0.temporal_host_info import TemporalHostInfoRequirer
-from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
+from charms.traefik_k8s.v2.ingress import (
+    IngressPerAppReadyEvent,
+    IngressPerAppRequirer,
+    IngressPerAppRevokedEvent,
+)
 from jinja2 import Environment, FileSystemLoader
 from ops import main, pebble
-from ops.charm import CharmBase
+from ops.charm import (
+    CharmBase,
+    ConfigChangedEvent,
+    InstallEvent,
+    RelationBrokenEvent,
+    RelationChangedEvent,
+    RelationEvent,
+    RelationJoinedEvent,
+    UpdateStatusEvent,
+)
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 from ops.pebble import CheckStatus
 
 from log import log_event_handler
-from state import State
 
 REQUIRED_AUTH_PARAMETERS = ["auth-provider-url", "auth-client-id", "auth-client-secret", "auth-scopes"]
 RECEIVE_CA_CERT_RELATION_NAME = "receive-ca-cert"
 CA_CERT_PATH = "/home/ui-server/certs/ca.pem"
+CONFIG_PATH = "/home/ui-server/config/charm.yaml"
 WORKLOAD_VERSION = "2.27.1"
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
+
+
+class ExitWithStatusError(Exception):
+    """Exception raised to exit the reconciliation with a specific unit status.
+
+    Attrs:
+        msg: The status message.
+        status_type: The ops status class to report.
+        status: The Juju unit status represented by the exception.
+    """
+
+    def __init__(self, msg: str, status_type):
+        """Construct.
+
+        Args:
+            msg: The status message.
+            status_type: The ops status class to report.
+        """
+        super().__init__(str(msg))
+        self.msg = str(msg)
+        self.status_type = status_type
+
+    @property
+    def status(self):
+        """Return the Juju unit status represented by this exception."""
+        return self.status_type(self.msg)
+
+
+class ExitWithoutStatusChange(Exception):  # noqa: N818
+    """Exception raised to exit the reconciliation leaving the unit status as it is.
+
+    The status that was announced for the event, if any, is kept; otherwise the previous status
+    stays.
+    """
 
 
 def render(template_name, context):
@@ -53,7 +101,6 @@ class TemporalUiK8SOperatorCharm(CharmBase):
     """Temporal UI charm.
 
     Attrs:
-        _state: used to store data that is persisted across invocations.
         external_hostname: DNS listing used for external connections.
     """
 
@@ -70,21 +117,9 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         """
         super().__init__(*args)
         self.name = "temporal-ui"
-        self._state = State(self.app, lambda: self.model.get_relation("peer"))
 
-        # Handle basic charm lifecycle.
-        self.framework.observe(self.on.peer_relation_changed, self._on_peer_relation_changed)
-        self.framework.observe(self.on.install, self._on_install)
-        self.framework.observe(self.on.temporal_ui_pebble_ready, self._on_temporal_ui_pebble_ready)
-        self.framework.observe(self.on.config_changed, self._on_config_changed)
-
-        # Handle ui:temporal relation.
-        self.framework.observe(self.on.ui_relation_joined, self._on_ui_relation_joined)
-        self.framework.observe(self.on.ui_relation_changed, self._on_ui_relation_changed)
-        self.framework.observe(self.on.ui_relation_broken, self._on_ui_relation_broken)
-
+        # Actions keep a dedicated handler: they have a request/response contract.
         self.framework.observe(self.on.restart_action, self._on_restart)
-        self.framework.observe(self.on.update_status, self._on_update_status)
 
         # Handle Nginx Ingress.
         self._require_nginx_route()
@@ -96,19 +131,33 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             port=self.config["port"],
             strip_prefix=True,
         )
-        self.framework.observe(self.ingress.on.ready, self._on_ingress_ready)
-        self.framework.observe(self.ingress.on.revoked, self._on_ingress_revoked)
 
         self.host_info = TemporalHostInfoRequirer(self)
-        self.framework.observe(self.host_info.on.temporal_host_info_changed, self._update)
-        self.framework.observe(self.host_info.on.temporal_host_info_unavailable, self._update)
 
         # The CA that issued the frontend certificate, used to verify the
         # frontend when it serves gRPC over TLS. It comes straight from the
         # certificates provider, not from the Temporal server charm.
         self.ca_transfer = CertificateTransferRequires(self, RECEIVE_CA_CERT_RELATION_NAME)
-        self.framework.observe(self.ca_transfer.on.certificate_set_updated, self._update)
-        self.framework.observe(self.ca_transfer.on.certificates_removed, self._update)
+
+        # Every event the charm reacts to converges on the single reconciler.
+        for event in [
+            self.on.install,
+            self.on.upgrade_charm,
+            self.on.config_changed,
+            self.on.update_status,
+            self.on.temporal_ui_pebble_ready,
+            self.on.peer_relation_changed,
+            self.on.ui_relation_joined,
+            self.on.ui_relation_changed,
+            self.on.ui_relation_broken,
+            self.ingress.on.ready,
+            self.ingress.on.revoked,
+            self.host_info.on.temporal_host_info_changed,
+            self.host_info.on.temporal_host_info_unavailable,
+            self.ca_transfer.on.certificate_set_updated,
+            self.ca_transfer.on.certificates_removed,
+        ]:
+            self.framework.observe(event, self._reconcile)
 
     @property
     def _ca_bundle(self) -> str:
@@ -131,61 +180,49 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         )
 
     @log_event_handler(logger)
-    def _on_ingress_ready(self, event):
-        """Handle Traefik ingress ready event.
+    def _reconcile(self, event):
+        """Reconcile the charm towards the desired state; idempotent for every event.
+
+        Whatever the event, a reconciliation that reaches the workload ends with the "replanning
+        application" status; only update-status, which is the periodic health check of a workload
+        whose plan is in place, reports the unit as active.
 
         Args:
-            event: The event triggered when ingress is ready.
+            event: The event that triggered the reconciliation.
         """
-        logger.info("Ingress is ready: %s", self.ingress.url)
-        self._update(event)
+        pending_status = self._pending_status(event)
+        try:
+            if isinstance(event, InstallEvent):
+                raise ExitWithStatusError("installing temporal ui tools", MaintenanceStatus)
 
-    @log_event_handler(logger)
-    def _on_ingress_revoked(self, event):
-        """Handle Traefik ingress revoked event.
+            self._mirror_server_status(event)
+            if self._is_ui_relation_event(event) and not self._peer_relation_ready():
+                raise ExitWithoutStatusChange()
+            self._log_event(event)
 
-        Args:
-            event: The event triggered when ingress is revoked.
-        """
-        logger.info("Ingress revoked")
-        self._update(event)
+            self._check_ready()
 
-    @log_event_handler(logger)
-    def _on_install(self, event):
-        """Install temporal UI tools.
+            container = self.unit.get_container(self.name)
+            update_status = isinstance(event, UpdateStatusEvent)
+            if not (update_status and self._validate_pebble_plan(container)):
+                self._check_container_can_connect(container)
+                context = self._build_context()
+                self._configure_workload(container, context)
+                self._apply_layer(container, context)
+                raise ExitWithStatusError("replanning application", MaintenanceStatus)
 
-        Args:
-            event: The event triggered when the relation changed.
-        """
-        self.unit.status = MaintenanceStatus("installing temporal ui tools")
+            self._check_service_up(container)
+        except ExitWithoutStatusChange:
+            if pending_status is not None:
+                self.unit.status = pending_status
+            return
+        except ExitWithStatusError as e:
+            self.unit.status = e.status
+            return
 
-    @log_event_handler(logger)
-    def _on_temporal_ui_pebble_ready(self, event):
-        """Define and start temporal UI using the Pebble API.
-
-        Args:
-            event: The event triggered when the relation changed.
-        """
-        self._update(event)
-
-    @log_event_handler(logger)
-    def _on_peer_relation_changed(self, event):
-        """Handle peer relation changed event.
-
-        Args:
-            event: The event triggered when the relation changed.
-        """
-        self._update(event)
-
-    @log_event_handler(logger)
-    def _on_config_changed(self, event):
-        """Handle configuration changes.
-
-        Args:
-            event: The event triggered when the relation changed.
-        """
-        self.unit.status = WaitingStatus("configuring temporal")
-        self._update(event)
+        self.unit.set_workload_version(WORKLOAD_VERSION)
+        message = "auth enabled" if self.config["auth-enabled"] else ""
+        self.unit.status = ActiveStatus(message)
 
     @log_event_handler(logger)
     def _on_restart(self, event):
@@ -196,7 +233,7 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         """
         container = self.unit.get_container(self.name)
         if not container.can_connect():
-            event.defer()
+            event.fail("Waiting for Pebble: the workload container is not ready")
             return
 
         self.unit.status = MaintenanceStatus("restarting ui")
@@ -204,33 +241,125 @@ class TemporalUiK8SOperatorCharm(CharmBase):
 
         event.set_results({"result": "worker successfully restarted"})
 
-    @log_event_handler(logger)
-    def _on_update_status(self, event):
-        """Handle `update-status` events.
+    def _pending_status(self, event):
+        """Return the status the event announces while it is reconciled.
+
+        It stays as the unit status if the reconciliation ends without a status of its own, e.g.
+        because the workload container cannot be reached yet.
 
         Args:
-            event: The `update-status` event triggered at intervals.
+            event: The event being reconciled.
+
+        Returns:
+            The announced status, or None if the event announces none.
+        """
+        if isinstance(event, ConfigChangedEvent):
+            return WaitingStatus("configuring temporal")
+        if not self._is_ui_relation_event(event) or not self._peer_relation_ready():
+            return None
+        if isinstance(event, RelationJoinedEvent):
+            return WaitingStatus(f"handling {event.relation.name} change")
+        if isinstance(event, RelationBrokenEvent):
+            return WaitingStatus(f"handling {event.relation.name} removal")
+        return None
+
+    @staticmethod
+    def _is_ui_relation_event(event) -> bool:
+        """Report whether the event is a ui:temporal relation event.
+
+        Args:
+            event: The event being reconciled.
+
+        Returns:
+            True for a ui:temporal relation event.
+        """
+        return isinstance(event, RelationEvent) and event.relation.name == "ui"
+
+    def _log_event(self, event):
+        """Log what the event reports, as it was logged by the dedicated handlers.
+
+        Args:
+            event: The event being reconciled.
+        """
+        if isinstance(event, IngressPerAppReadyEvent):
+            logger.info("Ingress is ready: %s", self.ingress.url)
+        elif isinstance(event, IngressPerAppRevokedEvent):
+            logger.info("Ingress revoked")
+        elif isinstance(event, RelationChangedEvent) and self._is_ui_relation_event(event):
+            logger.debug(f"ui:temporal: server is {self._server_status()}")
+
+    def _peer_relation_ready(self) -> bool:
+        """Report whether the peer relation exists."""
+        return self.model.get_relation("peer") is not None
+
+    def _server_status(self):
+        """Return the status the Temporal server publishes on the ui:temporal relation, or None."""
+        relation = self.model.get_relation("ui")
+        if relation is None or relation.app is None:
+            return None
+        return relation.data[relation.app].get("server_status")
+
+    def _mirror_server_status(self, event):
+        """Keep the `server_status` value of the previous revisions up to date; leader only.
+
+        This unit reads the status from the ui:temporal relation. During a rolling upgrade the
+        units still running a previous revision read it from the peer relation, where it is JSON
+        encoded, and the leader may already be upgraded and the only one updating it: the value is
+        never removed or reshaped, and kept up to date in the format of the previous revisions.
+
+        Args:
+            event: The event being reconciled.
+        """
+        peer = self.model.get_relation("peer")
+        if not self.unit.is_leader() or peer is None:
+            return
+
+        if isinstance(event, RelationBrokenEvent) and event.relation.name == "ui":
+            status = "blocked"
+        elif self.model.get_relation("ui") is not None:
+            status = self._server_status()
+        else:
+            return
+
+        mirrored = json.dumps(status)
+        if peer.data[self.app].get("server_status", "null") != mirrored:
+            peer.data[self.app]["server_status"] = mirrored
+
+    def _check_ready(self):
+        """Verify that the configuration and the relations are valid and ready.
+
+        Raises:
+            ExitWithStatusError: If they are not.
         """
         try:
             self._validate()
         except ValueError as err:
-            self.unit.status = BlockedStatus(str(err))
-            return
+            raise ExitWithStatusError(str(err), BlockedStatus) from err
 
-        container = self.unit.get_container(self.name)
-        valid_pebble_plan = self._validate_pebble_plan(container)
-        if not valid_pebble_plan:
-            self._update(event)
-            return
+    def _check_container_can_connect(self, container):
+        """Verify that the workload container is reachable.
 
+        Args:
+            container: application container
+
+        Raises:
+            ExitWithoutStatusChange: If it is not; pebble-ready or update-status reconciles it.
+        """
+        if not container.can_connect():
+            raise ExitWithoutStatusChange()
+
+    def _check_service_up(self, container):
+        """Verify that the workload reports as up.
+
+        Args:
+            container: application container
+
+        Raises:
+            ExitWithStatusError: If the `up` check of the workload is not passing.
+        """
         check = container.get_check("up")
         if check.status != CheckStatus.UP:
-            self.unit.status = MaintenanceStatus("Status check: DOWN")
-            return
-
-        self.unit.set_workload_version(WORKLOAD_VERSION)
-        message = "auth enabled" if self.config["auth-enabled"] else ""
-        self.unit.status = ActiveStatus(message)
+            raise ExitWithStatusError("Status check: DOWN", MaintenanceStatus)
 
     def _validate_pebble_plan(self, container):
         """Validate Temporal UI pebble plan.
@@ -247,70 +376,19 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         except (KeyError, pebble.ConnectionError):
             return False
 
-    @log_event_handler(logger)
-    def _on_ui_relation_joined(self, event):
-        """Handle joining a ui:temporal relation.
-
-        Args:
-            event: The event triggered when the relation changed.
-        """
-        if not self._state.is_ready():
-            event.defer()
-            return
-
-        self.unit.status = WaitingStatus(f"handling {event.relation.name} change")
-        if self.unit.is_leader():
-            self._state.server_status = event.relation.data[event.app].get("server_status")
-
-        self._update(event)
-
-    @log_event_handler(logger)
-    def _on_ui_relation_changed(self, event):
-        """Handle changes on the ui:temporal relation.
-
-        Args:
-            event: The event triggered when the relation changed.
-        """
-        if not self._state.is_ready():
-            event.defer()
-            return
-
-        if self.unit.is_leader():
-            self._state.server_status = event.relation.data[event.app].get("server_status")
-
-        logger.debug(f"ui:temporal: server is {self._state.server_status}")
-        self._update(event)
-
-    @log_event_handler(logger)
-    def _on_ui_relation_broken(self, event):
-        """Handle removal of the ui:temporal relation.
-
-        Args:
-            event: The event triggered when the relation changed.
-        """
-        if not self._state.is_ready():
-            event.defer()
-            return
-
-        self.unit.status = WaitingStatus(f"handling {event.relation.name} removal")
-        if self.unit.is_leader():
-            self._state.server_status = "blocked"
-
-        self._update(event)
-
     def _validate(self):
         """Validate that configuration and relations are valid and ready.
 
         Raises:
             ValueError: in case of invalid configuration.
         """
-        if not self._state.is_ready():
+        if not self._peer_relation_ready():
             raise ValueError("peer relation not ready")
 
         ui_relations = self.model.relations["ui"]
         if not ui_relations:
             raise ValueError("ui:temporal relation: not available")
-        if not self._state.server_status == "ready":
+        if not self._server_status() == "ready":
             raise ValueError("ui:temporal relation: server is not ready")
         if not (self.host_info.host and self.host_info.port):
             raise ValueError("temporal-host-info relation not established")
@@ -335,25 +413,12 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         if self.host_info.tls and not self._ca_bundle:
             raise ValueError(f"Temporal frontend uses TLS: integrate {RECEIVE_CA_CERT_RELATION_NAME} with its CA")
 
-    @log_event_handler(logger)
-    def _update(self, event):
-        """Update the Temporal UI configuration and replan its execution.
+    def _build_context(self) -> dict:
+        """Return the workload configuration: config file content and service environment.
 
-        Args:
-            event: The event triggered when the relation changed.
+        Returns:
+            The workload configuration.
         """
-        try:
-            self._validate()
-        except ValueError as err:
-            self.unit.status = BlockedStatus(str(err))
-            return
-
-        container = self.unit.get_container(self.name)
-        if not container.can_connect():
-            event.defer()
-            return
-
-        logger.info("configuring temporal ui")
         options = {
             "log-level": "LOG_LEVEL",
             "port": "TEMPORAL_UI_PORT",
@@ -396,31 +461,56 @@ class TemporalUiK8SOperatorCharm(CharmBase):
                 }
             )
 
-        if not (self.host_info.host and self.host_info.port):
-            self.unit.status = BlockedStatus("temporal-host-info relation not established")
-            return
-
         context["TEMPORAL_ADDRESS"] = f"{self.host_info.host}:{self.host_info.port}"
 
         if self.host_info.tls:
             # ui-server reads the CA file only at startup, and the path never
             # changes, so the bundle's hash goes into the Pebble environment:
             # a rotated CA then changes the layer and restarts the service.
-            ca_bundle = self._ca_bundle
-            container.push(CA_CERT_PATH, ca_bundle, make_dirs=True)
             context.update(
                 {
                     "TEMPORAL_TLS_CA": CA_CERT_PATH,
-                    "TEMPORAL_TLS_CA_HASH": hashlib.sha256(ca_bundle.encode()).hexdigest(),
+                    "TEMPORAL_TLS_CA_HASH": hashlib.sha256(self._ca_bundle.encode()).hexdigest(),
                     # Without host verification ui-server skips certificate
                     # verification entirely, CA included.
                     "TEMPORAL_TLS_ENABLE_HOST_VERIFICATION": "true",
                 }
             )
 
-        config = render("config.jinja", context)
-        container.push("/home/ui-server/config/charm.yaml", config, make_dirs=True)
+        return context
 
+    def _configure_workload(self, container, context):
+        """Write the workload files that differ from what the configuration calls for.
+
+        Args:
+            container: application container
+            context: The workload configuration.
+        """
+        logger.info("configuring temporal ui")
+        if self.host_info.tls:
+            self._push_if_changed(container, CA_CERT_PATH, self._ca_bundle)
+        self._push_if_changed(container, CONFIG_PATH, render("config.jinja", context))
+
+    @staticmethod
+    def _push_if_changed(container, path, content):
+        """Push a file to the container unless it already has that content.
+
+        Args:
+            container: application container
+            path: Absolute path of the file in the container.
+            content: The wanted content of the file.
+        """
+        if container.exists(path) and container.pull(path).read() == content:
+            return
+        container.push(path, content, make_dirs=True)
+
+    def _apply_layer(self, container, context):
+        """Add the Pebble layer and replan when the plan changed or the service is not running.
+
+        Args:
+            container: application container
+            context: The workload configuration, used as the service environment.
+        """
         logger.info("planning temporal ui execution")
         pebble_layer = {
             "summary": "temporal server layer",
@@ -445,10 +535,13 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             },
         }
 
+        plan_before = container.get_plan().to_dict()
         container.add_layer(self.name, pebble_layer, combine=True)
-        container.replan()
+        plan_changed = container.get_plan().to_dict() != plan_before
 
-        self.unit.status = MaintenanceStatus("replanning application")
+        service = container.get_services(self.name).get(self.name)
+        if plan_changed or service is None or not service.is_running():
+            container.replan()
 
 
 if __name__ == "__main__":  # pragma: nocover
