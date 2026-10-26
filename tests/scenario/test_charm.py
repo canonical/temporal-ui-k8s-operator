@@ -526,3 +526,401 @@ def test_ca_removed_blocks(
     assert state_out.unit_status == ops.BlockedStatus(
         "Temporal frontend uses TLS: integrate receive-ca-cert with its CA"
     )
+
+
+SERVICE = ops.pebble.ServiceStatus
+
+
+def _spy_on(method_name):
+    """Spy on a method of ops.Container, keeping its behaviour.
+
+    Args:
+        method_name: Name of the ops.Container method to spy on.
+
+    Returns:
+        The patcher, to be used as a context manager yielding the mock.
+    """
+    return unittest.mock.patch.object(
+        ops.model.Container, method_name, autospec=True, side_effect=getattr(ops.model.Container, method_name)
+    )
+
+
+def _reconciled(context, state, temporal_ui_container):
+    """Run the charm until the workload is planned and running.
+
+    The state is returned ready to be run again: the check infos Pebble reports are dropped, as the
+    consistency checker of the testing framework does not accept their default threshold.
+
+    Args:
+        context: The scenario context.
+        state: The base state.
+        temporal_ui_container: The workload container to start from.
+
+    Returns:
+        The state after the workload was planned.
+    """
+    state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
+    container = state_out.get_container("temporal-ui")
+    return dataclasses.replace(state_out, containers=[dataclasses.replace(container, check_infos=frozenset())])
+
+
+def test_install_announces_installation_whatever_the_relations(context, state):
+    state = dataclasses.replace(state, relations=[])
+
+    state_out = context.run(context.on.install(), state)
+
+    assert state_out.unit_status == ops.MaintenanceStatus("installing temporal ui tools")
+    assert state_out.get_container("temporal-ui").plan.to_dict() == {}
+
+
+@pytest.mark.parametrize("event_name", ["pebble_ready", "config_changed", "upgrade_charm", "update_status"])
+def test_container_not_ready_defers_nothing(context, state, event_name):
+    container = ops.testing.Container("temporal-ui", can_connect=False)
+    state = dataclasses.replace(state, containers=[container], unit_status=ops.ActiveStatus("kept"))
+    event = getattr(context.on, event_name)
+    event = event(container) if event_name == "pebble_ready" else event()
+
+    state_out = context.run(event, state)
+
+    assert state_out.deferred == []
+    if event_name == "config_changed":
+        assert state_out.unit_status == ops.WaitingStatus("configuring temporal")
+    else:
+        assert state_out.unit_status == ops.ActiveStatus("kept")
+
+
+def test_config_changed_announces_configuration(context, state, temporal_ui_container):
+    state_out = context.run(context.on.config_changed(), state)
+
+    assert state_out.unit_status == ops.MaintenanceStatus("replanning application")
+    assert state_out.get_container("temporal-ui").service_statuses["temporal-ui"] == SERVICE.ACTIVE
+
+
+def test_config_changed_blocks_when_invalid(context, state):
+    state = dataclasses.replace(state, relations=[])
+
+    state_out = context.run(context.on.config_changed(), state)
+
+    assert state_out.unit_status == ops.BlockedStatus("peer relation not ready")
+
+
+def test_upgrade_charm_reconciles(context, state):
+    state_out = context.run(context.on.upgrade_charm(), state)
+
+    assert state_out.unit_status == ops.MaintenanceStatus("replanning application")
+    assert "temporal-ui" in state_out.get_container("temporal-ui").plan.services
+
+
+def test_peer_relation_changed_reconciles(context, state, peer_relation):
+    state_out = context.run(context.on.relation_changed(peer_relation), state)
+
+    assert state_out.unit_status == ops.MaintenanceStatus("replanning application")
+
+
+@pytest.mark.parametrize("leader", [True, False])
+def test_ui_relation_joined_announces_the_change_while_waiting_for_pebble(context, state, ui_relation, leader):
+    container = ops.testing.Container("temporal-ui", can_connect=False)
+    state = dataclasses.replace(state, containers=[container], leader=leader)
+
+    state_out = context.run(context.on.relation_joined(ui_relation), state)
+
+    assert state_out.unit_status == ops.WaitingStatus("handling ui change")
+    assert state_out.deferred == []
+
+
+def test_ui_relation_changed_keeps_status_while_waiting_for_pebble(context, state, ui_relation):
+    container = ops.testing.Container("temporal-ui", can_connect=False)
+    state = dataclasses.replace(state, containers=[container], unit_status=ops.ActiveStatus())
+
+    state_out = context.run(context.on.relation_changed(ui_relation), state)
+
+    assert state_out.unit_status == ops.ActiveStatus()
+    assert state_out.deferred == []
+
+
+@pytest.mark.peer_relation_uninitialized
+@pytest.mark.parametrize("event_name", ["relation_joined", "relation_changed", "relation_broken"])
+def test_ui_relation_events_keep_status_without_peer_relation(context, state, all_required_relations, event_name):
+    ui = next(relation for relation in all_required_relations if relation.endpoint == "ui")
+    peer = next(relation for relation in all_required_relations if relation.endpoint == "peer")
+    state = dataclasses.replace(state, relations=[ui], unit_status=ops.ActiveStatus("kept"))
+    assert peer not in state.relations
+
+    state_out = context.run(getattr(context.on, event_name)(ui), state)
+
+    assert state_out.unit_status == ops.ActiveStatus("kept")
+    assert state_out.deferred == []
+    assert state_out.get_container("temporal-ui").plan.to_dict() == {}
+
+
+@pytest.mark.parametrize("leader", [True, False])
+def test_ui_relation_broken_blocks(context, state, temporal_ui_container, ui_relation, leader):
+    state = dataclasses.replace(state, leader=leader)
+    state_out = _reconciled(context, state, temporal_ui_container)
+
+    state_out = context.run(context.on.relation_broken(ui_relation), state_out)
+
+    assert state_out.unit_status == ops.BlockedStatus("ui:temporal relation: not available")
+
+
+def test_ui_relation_server_not_ready_blocks(context, state, temporal_ui_container, peer_relation):
+    ui = ops.testing.Relation("ui", remote_app_data={"server_status": "blocked"})
+    state = dataclasses.replace(state, relations=[peer_relation, ui, *_host_info(state)])
+
+    state_out = context.run(context.on.relation_changed(ui), state)
+
+    assert state_out.unit_status == ops.BlockedStatus("ui:temporal relation: server is not ready")
+    assert state_out.get_container("temporal-ui").plan.to_dict() == {}
+
+
+def _host_info(state):
+    """Return the temporal-host-info relations of a state.
+
+    Args:
+        state: The state.
+
+    Returns:
+        The temporal-host-info relations.
+    """
+    return [relation for relation in state.relations if relation.endpoint == "temporal-host-info"]
+
+
+def test_server_status_is_read_from_the_ui_relation_not_the_peer_relation(
+    context, state, temporal_ui_container, host_info_relation
+):
+    # The peer relation holds a stale value; the source of truth is the ui:temporal relation.
+    peer = ops.testing.PeerRelation(endpoint="peer", local_app_data={"server_status": json.dumps("blocked")})
+    ui = ops.testing.Relation("ui", remote_app_data={"server_status": "ready"})
+    state = dataclasses.replace(state, relations=[peer, ui, host_info_relation])
+
+    state_out = context.run(context.on.relation_changed(ui), state)
+
+    assert state_out.unit_status == ops.MaintenanceStatus("replanning application")
+
+
+def test_server_status_is_not_cached_in_the_peer_relation_when_missing(
+    context, state, host_info_relation, peer_relation
+):
+    ui = ops.testing.Relation("ui")
+    peer = ops.testing.PeerRelation(endpoint="peer")
+    state = dataclasses.replace(state, relations=[peer, ui, host_info_relation])
+
+    state_out = context.run(context.on.relation_changed(ui), state)
+
+    assert state_out.unit_status == ops.BlockedStatus("ui:temporal relation: server is not ready")
+    assert state_out.get_relation(peer.id).local_app_data == {}
+
+
+@pytest.mark.parametrize("event_name", ["relation_joined", "relation_changed", "config_changed"])
+def test_leader_keeps_the_legacy_server_status_of_the_peer_relation_up_to_date(
+    context, state, host_info_relation, event_name
+):
+    # Units that still run a previous revision read the JSON encoded status from the peer relation.
+    peer = ops.testing.PeerRelation(endpoint="peer", local_app_data={"other-key": "kept"})
+    ui = ops.testing.Relation("ui", remote_app_data={"server_status": "ready"})
+    state = dataclasses.replace(state, relations=[peer, ui, host_info_relation])
+    event = getattr(context.on, event_name)
+    event = event(ui) if event_name != "config_changed" else event()
+
+    state_out = context.run(event, state)
+
+    assert state_out.get_relation(peer.id).local_app_data == {
+        "other-key": "kept",
+        "server_status": json.dumps("ready"),
+    }
+
+
+def test_leader_updates_the_legacy_server_status_when_the_server_changes(context, state, host_info_relation):
+    peer = ops.testing.PeerRelation(endpoint="peer", local_app_data={"server_status": json.dumps("ready")})
+    ui = ops.testing.Relation("ui", remote_app_data={"server_status": "blocked"})
+    state = dataclasses.replace(state, relations=[peer, ui, host_info_relation])
+
+    state_out = context.run(context.on.relation_changed(ui), state)
+
+    assert state_out.get_relation(peer.id).local_app_data == {"server_status": json.dumps("blocked")}
+
+
+def test_leader_marks_the_legacy_server_status_blocked_when_the_ui_relation_is_broken(
+    context, state, temporal_ui_container, peer_relation, ui_relation
+):
+    state_out = context.run(context.on.relation_broken(ui_relation), state)
+
+    assert state_out.get_relation(peer_relation.id).local_app_data == {"server_status": json.dumps("blocked")}
+
+    # The value of the previous revisions is not cleaned up by the events that follow.
+    remaining = [relation for relation in state_out.relations if relation.endpoint != "ui"]
+    state_out = context.run(context.on.update_status(), dataclasses.replace(state_out, relations=remaining))
+    assert state_out.get_relation(peer_relation.id).local_app_data == {"server_status": json.dumps("blocked")}
+
+
+def test_non_leader_reads_the_relation_and_writes_nothing_to_the_peer_relation(
+    context, state, temporal_ui_container, peer_relation, ui_relation
+):
+    state = dataclasses.replace(state, leader=False)
+
+    state_out = context.run(context.on.relation_changed(ui_relation), state)
+
+    assert state_out.unit_status == ops.MaintenanceStatus("replanning application")
+    assert state_out.get_relation(peer_relation.id).local_app_data == peer_relation.local_app_data
+
+
+def test_reconcile_is_idempotent(context, state, temporal_ui_container, tmp_path):
+    container = dataclasses.replace(
+        temporal_ui_container,
+        mounts={"ui-server": ops.testing.Mount(location="/home/ui-server", source=tmp_path)},
+    )
+    state = dataclasses.replace(state, containers=[container])
+    state_out = _reconciled(context, state, container)
+    plan = state_out.get_container("temporal-ui").plan.to_dict()
+    config = (tmp_path / "config" / "charm.yaml").read_text()
+
+    with _spy_on("replan") as replan, _spy_on("push") as push:
+        state_again = context.run(context.on.config_changed(), state_out)
+
+    assert state_again.unit_status == ops.MaintenanceStatus("replanning application")
+    assert state_again.get_container("temporal-ui").plan.to_dict() == plan
+    assert (tmp_path / "config" / "charm.yaml").read_text() == config
+    replan.assert_not_called()
+    push.assert_not_called()
+
+
+def test_config_change_replans_and_rewrites_the_config(context, state, temporal_ui_container, tmp_path):
+    container = dataclasses.replace(
+        temporal_ui_container,
+        mounts={"ui-server": ops.testing.Mount(location="/home/ui-server", source=tmp_path)},
+    )
+    state = dataclasses.replace(state, containers=[container])
+    state_out = _reconciled(context, state, container)
+
+    with _spy_on("replan") as replan:
+        state_out = context.run(
+            context.on.config_changed(), dataclasses.replace(state_out, config={"start-workflow-disabled": True})
+        )
+
+    replan.assert_called_once()
+    environment = state_out.get_container("temporal-ui").plan.services["temporal-ui"].environment
+    assert environment["TEMPORAL_START_WORKFLOW_DISABLED"] is True
+    assert "startWorkflowDisabled: True" in (tmp_path / "config" / "charm.yaml").read_text()
+
+
+def test_stopped_service_is_started_again(context, state, temporal_ui_container):
+    state_out = _reconciled(context, state, temporal_ui_container)
+    container = state_out.get_container("temporal-ui")
+    stopped = dataclasses.replace(container, service_statuses={"temporal-ui": SERVICE.INACTIVE})
+
+    state_out = context.run(context.on.config_changed(), dataclasses.replace(state_out, containers=[stopped]))
+
+    assert state_out.get_container("temporal-ui").service_statuses["temporal-ui"] == SERVICE.ACTIVE
+    assert state_out.unit_status == ops.MaintenanceStatus("replanning application")
+
+
+def test_update_status_blocks_when_invalid(context, state, temporal_ui_container_initialized):
+    state = dataclasses.replace(state, relations=[], containers=[temporal_ui_container_initialized])
+
+    state_out = context.run(context.on.update_status(), state)
+
+    assert state_out.unit_status == ops.BlockedStatus("peer relation not ready")
+
+
+def test_update_status_does_not_replan_when_the_plan_is_in_place(context, state, temporal_ui_container_initialized):
+    state = dataclasses.replace(state, containers=[temporal_ui_container_initialized])
+
+    with _spy_on("replan") as replan:
+        state_out = context.run(context.on.update_status(), state)
+
+    replan.assert_not_called()
+    assert state_out.unit_status == ops.ActiveStatus()
+
+
+def test_update_status_reports_auth_enabled(
+    context, nginx_state, temporal_ui_container_initialized, config_with_auth_enabled
+):
+    state = dataclasses.replace(
+        nginx_state, config=config_with_auth_enabled, containers=[temporal_ui_container_initialized]
+    )
+
+    state_out = context.run(context.on.update_status(), state)
+
+    assert state_out.unit_status == ops.ActiveStatus("auth enabled")
+    assert state_out.workload_version == "2.27.1"
+
+
+def test_update_status_replans_an_incomplete_plan_and_keeps_the_service_running(
+    context, state, temporal_ui_container, temporal_ui_container_initialized
+):
+    state_out = _reconciled(context, state, temporal_ui_container)
+    plan = state_out.get_container("temporal-ui").plan.to_dict()
+    incomplete = dataclasses.replace(
+        temporal_ui_container_initialized,
+        check_infos=frozenset(),
+        layers={"incomplete-layer": ops.pebble.Layer({"services": {"temporal-ui": {"override": "replace"}}})},
+    )
+
+    state_out = context.run(context.on.update_status(), dataclasses.replace(state_out, containers=[incomplete]))
+
+    assert state_out.unit_status == ops.MaintenanceStatus("replanning application")
+    assert state_out.get_container("temporal-ui").plan.to_dict()["services"] == plan["services"]
+
+
+def test_update_status_keeps_status_while_waiting_for_pebble(context, state):
+    container = ops.testing.Container("temporal-ui", can_connect=False)
+    state = dataclasses.replace(
+        state, containers=[container], unit_status=ops.MaintenanceStatus("replanning application")
+    )
+
+    state_out = context.run(context.on.update_status(), state)
+
+    assert state_out.unit_status == ops.MaintenanceStatus("replanning application")
+    assert state_out.deferred == []
+
+
+def test_host_info_change_reconciles(context, state, temporal_ui_container, host_info_relation):
+    state_out = context.run(context.on.relation_changed(host_info_relation), state)
+
+    assert state_out.unit_status == ops.MaintenanceStatus("replanning application")
+    environment = state_out.get_container("temporal-ui").plan.services["temporal-ui"].environment
+    assert environment["TEMPORAL_ADDRESS"] == "10.0.0.1:7233"
+
+
+def test_host_info_removal_blocks(context, state, temporal_ui_container, host_info_relation):
+    state_out = _reconciled(context, state, temporal_ui_container)
+
+    state_out = context.run(context.on.relation_broken(host_info_relation), state_out)
+
+    assert state_out.unit_status == ops.BlockedStatus("temporal-host-info relation not established")
+
+
+def test_auth_requires_its_parameters(context, nginx_state, config):
+    state = dataclasses.replace(nginx_state, config={**config, "auth-enabled": True})
+
+    state_out = context.run(context.on.config_changed(), state)
+
+    assert state_out.unit_status == ops.BlockedStatus("Invalid config: auth-client-id value missing")
+
+
+def test_auth_requires_an_ingress(context, state, config_with_auth_enabled):
+    state = dataclasses.replace(state, config=config_with_auth_enabled)
+
+    state_out = context.run(context.on.config_changed(), state)
+
+    assert state_out.unit_status == ops.BlockedStatus("Invalid config: auth cannot work without ingress relation")
+
+
+def test_restart_action(context, state, temporal_ui_container):
+    state_out = _reconciled(context, state, temporal_ui_container)
+
+    state_out = context.run(context.on.action("restart"), state_out)
+
+    assert context.action_results == {"result": "worker successfully restarted"}
+    assert state_out.unit_status == ops.MaintenanceStatus("restarting ui")
+    assert state_out.get_container("temporal-ui").service_statuses["temporal-ui"] == SERVICE.ACTIVE
+
+
+def test_restart_action_fails_while_waiting_for_pebble(context, state):
+    container = ops.testing.Container("temporal-ui", can_connect=False)
+    state = dataclasses.replace(state, containers=[container])
+
+    with pytest.raises(ops.testing.ActionFailed):
+        context.run(context.on.action("restart"), state)
+
+    assert context.action_results is None or context.action_results == {}
