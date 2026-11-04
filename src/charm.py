@@ -183,9 +183,8 @@ class TemporalUiK8SOperatorCharm(CharmBase):
     def _reconcile(self, event):
         """Reconcile the charm towards the desired state; idempotent for every event.
 
-        Whatever the event, a reconciliation that reaches the workload ends with the "replanning
-        application" status; only update-status, which is the periodic health check of a workload
-        whose plan is in place, reports the unit as active.
+        Report "replanning application" only when the workload is replanned. Unchanged workloads
+        and update-status with a valid plan report active after passing the health check.
 
         Args:
             event: The event that triggered the reconciliation.
@@ -208,8 +207,8 @@ class TemporalUiK8SOperatorCharm(CharmBase):
                 self._check_container_can_connect(container)
                 context = self._build_context()
                 self._configure_workload(container, context)
-                self._apply_layer(container, context)
-                raise ExitWithStatusError("replanning application", MaintenanceStatus)
+                if self._apply_layer(container, context):
+                    raise ExitWithStatusError("replanning application", MaintenanceStatus)
 
             self._check_service_up(container)
         except ExitWithoutStatusChange:
@@ -239,7 +238,7 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         self.unit.status = MaintenanceStatus("restarting ui")
         container.restart(self.name)
 
-        event.set_results({"result": "worker successfully restarted"})
+        event.set_results({"result": "temporal ui successfully restarted"})
 
     def _pending_status(self, event):
         """Return the status the event announces while it is reconciled.
@@ -504,12 +503,15 @@ class TemporalUiK8SOperatorCharm(CharmBase):
             return
         container.push(path, content, make_dirs=True)
 
-    def _apply_layer(self, container, context):
+    def _apply_layer(self, container, context) -> bool:
         """Add the Pebble layer and replan when the plan changed or the service is not running.
 
         Args:
             container: application container
             context: The workload configuration, used as the service environment.
+
+        Returns:
+            Whether the workload was replanned.
         """
         logger.info("planning temporal ui execution")
         pebble_layer = {
@@ -542,6 +544,8 @@ class TemporalUiK8SOperatorCharm(CharmBase):
         service = container.get_services(self.name).get(self.name)
         if plan_changed or service is None or not service.is_running():
             container.replan()
+            return True
+        return False
 
 
 if __name__ == "__main__":  # pragma: nocover
