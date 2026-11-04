@@ -267,18 +267,19 @@ def test_update_status_up(context, state, temporal_ui_container, temporal_ui_con
 
 
 def test_update_status_down(context, state, temporal_ui_container, temporal_ui_container_initialized, ui_relation):
+    """Keep the health-check failure status without replanning the unchanged workload."""
     state_out = context.run(context.on.pebble_ready(temporal_ui_container), state)
-
     state_out = dataclasses.replace(state_out, containers=[temporal_ui_container_initialized])
     state_out = context.run(context.on.relation_changed(ui_relation), state_out)
-
     temporal_container_down = dataclasses.replace(
         temporal_ui_container_initialized, check_infos=[ops.testing.CheckInfo("up", status=ops.pebble.CheckStatus.DOWN)]
     )
     state_out = dataclasses.replace(state_out, containers=[temporal_container_down])
 
-    state_out = context.run(context.on.update_status(), state_out)
+    with _spy_on("replan") as replan:
+        state_out = context.run(context.on.update_status(), state_out)
 
+    replan.assert_not_called()
     assert state_out.unit_status == ops.MaintenanceStatus("Status check: DOWN")
 
 
@@ -765,6 +766,7 @@ def test_non_leader_reads_the_relation_and_writes_nothing_to_the_peer_relation(
 
 
 def test_reconcile_is_idempotent(context, state, temporal_ui_container, tmp_path):
+    """An unchanged configuration keeps the plan and workload files without replanning."""
     container = dataclasses.replace(
         temporal_ui_container,
         mounts={"ui-server": ops.testing.Mount(location="/home/ui-server", source=tmp_path)},
@@ -777,14 +779,49 @@ def test_reconcile_is_idempotent(context, state, temporal_ui_container, tmp_path
     with _spy_on("replan") as replan, _spy_on("push") as push:
         state_again = context.run(context.on.config_changed(), state_out)
 
-    assert state_again.unit_status == ops.MaintenanceStatus("replanning application")
+    assert state_again.unit_status == ops.ActiveStatus()
     assert state_again.get_container("temporal-ui").plan.to_dict() == plan
     assert (tmp_path / "config" / "charm.yaml").read_text() == config
+    assert state_again.workload_version == "2.27.1"
     replan.assert_not_called()
     push.assert_not_called()
 
 
+@pytest.mark.parametrize("hook", ["config", "ui relation", "ingress"])
+@pytest.mark.parametrize("healthy", [True, False], ids=["healthy", "unhealthy"])
+def test_unchanged_workload_is_active_after_config_and_relation_hooks(
+    context, state, temporal_ui_container, ui_relation, hook, healthy
+):
+    """Unchanged hooks check health without replanning and report Active only when healthy."""
+    state_out = _reconciled(context, state, temporal_ui_container)
+    plan = state_out.get_container("temporal-ui").plan.to_dict()
+
+    if hook == "config":
+        event = context.on.config_changed()
+    elif hook == "ui relation":
+        event = context.on.relation_changed(ui_relation)
+    else:
+        ingress_relation = ops.testing.Relation(
+            "ingress", remote_app_data={"ingress": json.dumps({"url": "https://temporal-ui.example.com"})}
+        )
+        state_out = dataclasses.replace(state_out, relations=state_out.relations | {ingress_relation})
+        event = context.on.relation_changed(ingress_relation)
+
+    check_status = ops.pebble.CheckStatus.UP if healthy else ops.pebble.CheckStatus.DOWN
+    with _spy_on("replan") as replan, unittest.mock.patch(
+        "ops.model.Container.get_check", return_value=unittest.mock.Mock(status=check_status)
+    ) as get_check:
+        state_again = context.run(event, state_out)
+
+    replan.assert_not_called()
+    get_check.assert_called_once_with("up")
+    expected_status = ops.ActiveStatus() if healthy else ops.MaintenanceStatus("Status check: DOWN")
+    assert state_again.unit_status == expected_status
+    assert state_again.get_container("temporal-ui").plan.to_dict() == plan
+
+
 def test_config_change_replans_and_rewrites_the_config(context, state, temporal_ui_container, tmp_path):
+    """A changed configuration replans the service and reports maintenance."""
     container = dataclasses.replace(
         temporal_ui_container,
         mounts={"ui-server": ops.testing.Mount(location="/home/ui-server", source=tmp_path)},
@@ -798,6 +835,7 @@ def test_config_change_replans_and_rewrites_the_config(context, state, temporal_
         )
 
     replan.assert_called_once()
+    assert state_out.unit_status == ops.MaintenanceStatus("replanning application")
     environment = state_out.get_container("temporal-ui").plan.services["temporal-ui"].environment
     assert environment["TEMPORAL_START_WORKFLOW_DISABLED"] is True
     assert "startWorkflowDisabled: True" in (tmp_path / "config" / "charm.yaml").read_text()
@@ -832,15 +870,19 @@ def test_update_status_does_not_replan_when_the_plan_is_in_place(context, state,
     assert state_out.unit_status == ops.ActiveStatus()
 
 
+@pytest.mark.parametrize("event", ["update_status", "config_changed"])
 def test_update_status_reports_auth_enabled(
-    context, nginx_state, temporal_ui_container_initialized, config_with_auth_enabled
+    context, nginx_state, temporal_ui_container, config_with_auth_enabled, event
 ):
-    state = dataclasses.replace(
-        nginx_state, config=config_with_auth_enabled, containers=[temporal_ui_container_initialized]
-    )
+    """Report auth and workload version when an unchanged workload passes its health check."""
+    state = dataclasses.replace(nginx_state, config=config_with_auth_enabled, containers=[temporal_ui_container])
+    state = _reconciled(context, state, temporal_ui_container)
+    with _spy_on("replan") as replan, unittest.mock.patch(
+        "ops.model.Container.get_check", return_value=unittest.mock.Mock(status=ops.pebble.CheckStatus.UP)
+    ):
+        state_out = context.run(getattr(context.on, event)(), state)
 
-    state_out = context.run(context.on.update_status(), state)
-
+    replan.assert_not_called()
     assert state_out.unit_status == ops.ActiveStatus("auth enabled")
     assert state_out.workload_version == "2.27.1"
 
@@ -907,20 +949,20 @@ def test_auth_requires_an_ingress(context, state, config_with_auth_enabled):
 
 
 def test_restart_action(context, state, temporal_ui_container):
+    """Report the Temporal UI-specific result after a successful restart."""
     state_out = _reconciled(context, state, temporal_ui_container)
 
     state_out = context.run(context.on.action("restart"), state_out)
 
-    assert context.action_results == {"result": "worker successfully restarted"}
+    assert context.action_results == {"result": "temporal ui successfully restarted"}
     assert state_out.unit_status == ops.MaintenanceStatus("restarting ui")
     assert state_out.get_container("temporal-ui").service_statuses["temporal-ui"] == SERVICE.ACTIVE
 
 
 def test_restart_action_fails_while_waiting_for_pebble(context, state):
+    """Return an actionable failure when Pebble cannot be reached."""
     container = ops.testing.Container("temporal-ui", can_connect=False)
     state = dataclasses.replace(state, containers=[container])
 
-    with pytest.raises(ops.testing.ActionFailed):
+    with pytest.raises(ops.testing.ActionFailed, match="Waiting for Pebble: the workload container is not ready"):
         context.run(context.on.action("restart"), state)
-
-    assert context.action_results is None or context.action_results == {}
