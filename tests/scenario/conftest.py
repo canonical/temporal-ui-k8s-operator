@@ -13,7 +13,7 @@ from charm import TemporalUiK8SOperatorCharm
 def pytest_configure(config):  # noqa: DCO020
     """Flags that can be configured to modify fixture behavior.
 
-    Used to determine how _state in the peer relation app databag is populated.
+    Used to determine whether the peer relation app databag carries the legacy `server_status`.
 
     Args:
         config: the pytest config object
