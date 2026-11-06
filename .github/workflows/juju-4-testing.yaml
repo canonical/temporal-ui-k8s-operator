@@ -1,26 +1,30 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-# Nightly integration tests against Juju 4.x via the team's shared reusable
+# Weekly integration tests against Juju 4.x via the team's shared reusable
 # workflow. Each test command gets its own runner provisioned by concierge.
-# Scheduled failures open/update one issue labelled `juju-4`.
+# Scheduled failures open/update one issue labelled `juju-4` and `bug`.
 
-name: Juju 4.x Tests
+name: juju-4-testing
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
 
 on:
   schedule:
-    # Run at 03:32 UTC every day
-    - cron: '32 3 * * *'
+    # Run at 03:32 UTC every Monday
+    - cron: '32 3 * * 1'
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   issues: write
 
 jobs:
   integration:
     name: Integration tests [juju 4.x]
-    uses: canonical/workflows-team/.github/workflows/juju-nightly.yaml@main
+    uses: canonical/workflows-team/.github/workflows/juju-testing.yaml@main
     with:
       juju-channel: "4.1/edge"
       # Matches the runner label used by tests.yaml.
@@ -35,14 +39,14 @@ jobs:
       test-commands: >-
         ["just integration tests/integration/test_refresh.py",
         "just integration tests/integration/test_traefik_ingress.py"]
-      issue-label: juju-4
+      issue-labels: juju-4,bug
 
   # test_charm.py exercises nginx-route, so its runners need the ingress-nginx
   # controller installed by .github/scripts/init-pytest-ui.sh (the same setup
   # tests.yaml runs before every integration job).
   nginx-ingress:
     name: Nginx ingress integration test [juju 4.x]
-    uses: canonical/workflows-team/.github/workflows/juju-nightly.yaml@main
+    uses: canonical/workflows-team/.github/workflows/juju-testing.yaml@main
     with:
       juju-channel: "4.1/edge"
       runner: self-hosted-linux-amd64-resolute-large
@@ -51,4 +55,4 @@ jobs:
       extra-env: '{"POSTGRESQL_CHANNEL": "16/stable", "POSTGRESQL_FORCE": "true"}'
       setup-command: bash .github/scripts/init-pytest-ui.sh
       test-commands: '["just integration tests/integration/test_charm.py"]'
-      issue-label: juju-4
+      issue-labels: juju-4,bug
